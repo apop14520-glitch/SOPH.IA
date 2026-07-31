@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f26522" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>SOPH.IA</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+    <script>
+      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+        let currentBuild = null
+        setInterval(async () => {
+          try {
+            const html = await fetch('/?live=' + Date.now(), {cache: 'no-store'}).then(r => r.text())
+            const build = html.match(/assets\/index-[^"]+\.js/)?.[0]
+            if (currentBuild && build && currentBuild !== build) location.reload()
+            if (build) currentBuild = build
+          } catch {}
+        }, 1200)
+      }
+    </script>
+  </body>
+</html>

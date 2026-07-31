@@ -1,0 +1,61 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: sophia
+      POSTGRES_USER: sophia
+      POSTGRES_PASSWORD: sophia
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sophia"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    environment:
+      APP_NAME: SOPH.IA
+      SECRET_KEY: ${SECRET_KEY:-troque-esta-chave}
+      DATABASE_URL: postgresql+psycopg://sophia:sophia@db:5432/sophia
+      CORS_ORIGINS: http://localhost:5173,http://localhost:3000
+      UPLOAD_DIR: /app/uploads
+      AI_PROVIDER: ${AI_PROVIDER:-template}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
+      WEB_SEARCH_ENABLED: ${WEB_SEARCH_ENABLED:-true}
+      OLLAMA_API_KEY: ${OLLAMA_API_KEY:-}
+      WEB_ALLOWED_DOMAINS: ${WEB_ALLOWED_DOMAINS:-gov.br,planalto.gov.br,tcu.gov.br,cgu.gov.br,compras.gov.br,rondonia.ro.gov.br}
+      WEB_SEARCH_MAX_RESULTS: ${WEB_SEARCH_MAX_RESULTS:-4}
+      WEB_SEARCH_TIMEOUT_SECONDS: ${WEB_SEARCH_TIMEOUT_SECONDS:-20}
+    volumes:
+      - uploads:/app/uploads
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: /api
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["ai"]
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+
+volumes:
+  postgres_data:
+  uploads:
+  ollama_data:
