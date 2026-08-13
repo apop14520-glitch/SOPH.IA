@@ -55,6 +55,21 @@ npm install
 npm run dev
 ```
 
+## Frontend na Netlify
+
+O arquivo `netlify.toml` da raiz configura automaticamente a compilação do
+frontend React, localizado em `frontend`, e publica o diretório `dist`.
+
+A Netlify hospeda somente o frontend. Para autenticação, chat, uploads e geração
+de documentos, publique o backend FastAPI separadamente e configure na Netlify:
+
+```env
+VITE_API_URL=https://seu-backend.example.com/api
+```
+
+Depois de alterar essa variável, execute uma nova implantação para incorporá-la
+ao bundle do Vite.
+
 Com `DATABASE_URL=sqlite:///./data/sophia.db`, o banco e as tabelas são criados
 automaticamente. O seed cria dois setores, o usuário administrador e fontes
 institucionais demonstrativas.
