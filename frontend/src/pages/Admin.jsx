@@ -1,7 +1,7 @@
 import React,{useEffect,useState} from 'react'
 import {Alert,Avatar,Box,Button,Card,Chip,CircularProgress,Dialog,DialogActions,DialogContent,DialogTitle,Divider,FormControl,IconButton,InputAdornment,InputLabel,MenuItem,Radio,Select,Switch,Tab,Tabs,TextField,Tooltip,Typography} from '@mui/material'
 import {Add,AutoAwesome,BlockOutlined,CheckCircle,CloudDownload,CloudUpload,DeleteOutline,Description,GroupOutlined,Key,OpenInNew,Person,PsychologyOutlined,SettingsSuggestOutlined,StorageOutlined,ThumbUpOutlined,Visibility,VisibilityOff} from '@mui/icons-material'
-import {api,errorMessage} from '../api'
+import {api,asArray,errorMessage} from '../api'
 
 const sectors=['Presidência','Diretoria Administrativa e Financeira','Diretoria Técnica','Tecnologia da Informação','Recursos Humanos','Licitações e Contratos','Jurídico','Outro']
 const roles={padrao:'Padrão',diretor:'Diretor',gerente:'Gerente de TI',admin:'Administrador'}
@@ -17,11 +17,11 @@ export default function Admin({currentUser}){
  const [learningExamples,setLearningExamples]=useState([]),[learningFilter,setLearningFilter]=useState('pendente'),[learningBusy,setLearningBusy]=useState(null)
  const [aiConfig,setAiConfig]=useState({provider:'gemini',enabled:false,model:'gemini-3.6-flash',api_key:'',configured:false,masked_api_key:'',organization_id:'',project_id:''}),[showApiKey,setShowApiKey]=useState(false),[aiBusy,setAiBusy]=useState(false),[aiTesting,setAiTesting]=useState(false),[aiMessage,setAiMessage]=useState(null)
  const isAdmin=currentUser.role==='admin'
- const refresh=()=>api.get('/users').then(r=>setUsers(r.data)).catch(e=>setError(errorMessage(e,'Não foi possível carregar os usuários.')))
- const refreshSectors=()=>api.get('/sectors').then(r=>setSectorOptions(r.data)).catch(()=>setSectorOptions([]))
- const refreshModels=()=>api.get('/knowledge').then(r=>setModels(r.data)).catch(()=>setModels([]))
+ const refresh=()=>api.get('/users').then(r=>setUsers(asArray(r.data))).catch(e=>{setUsers([]);setError(errorMessage(e,'Não foi possível carregar os usuários.'))})
+ const refreshSectors=()=>api.get('/sectors').then(r=>setSectorOptions(asArray(r.data))).catch(()=>setSectorOptions([]))
+ const refreshModels=()=>api.get('/knowledge').then(r=>setModels(asArray(r.data))).catch(()=>setModels([]))
  const refreshAI=()=>api.get('/admin/ai').then(({data})=>setAiConfig(current=>({...current,...data,api_key:''}))).catch(()=>{})
- const refreshLearning=()=>api.get('/admin/learning').then(r=>setLearningExamples(r.data)).catch(()=>setLearningExamples([]))
+ const refreshLearning=()=>api.get('/admin/learning').then(r=>setLearningExamples(asArray(r.data))).catch(()=>setLearningExamples([]))
  useEffect(()=>{refresh();refreshSectors();if(isAdmin){refreshModels();refreshAI();refreshLearning()}},[])
  const update=async(id,changes)=>{setError('');try{await api.patch(`/users/${id}`,changes);await refresh()}catch(e){setError(errorMessage(e,'Não foi possível atualizar o usuário.'))}}
  const remove=async id=>{setError('');try{await api.delete(`/users/${id}`);await refresh()}catch(e){setError(errorMessage(e,'Não foi possível desativar o usuário.'))}}
