@@ -11,6 +11,29 @@ api.interceptors.request.use(config => {
   return config
 })
 
+
+// Na hospedagem estática, uma rota /api inexistente pode devolver o index.html
+// com status 200. Sem esta validação, o React interpreta o HTML como dados da
+// API e componentes que esperam listas falham com "map is not a function".
+api.interceptors.response.use(response => {
+  const contentType = String(response.headers?.['content-type'] || '').toLowerCase()
+  const isHtml = contentType.includes('text/html') || (
+    typeof response.data === 'string' && /^\s*<!doctype html|^\s*<html/i.test(response.data)
+  )
+  if (isHtml) {
+    return Promise.reject({
+      config: response.config,
+      response: {
+        status: 503,
+        data: {detail: 'O servidor da SOPH.IA não está conectado. Configure VITE_API_URL com o endereço público do backend FastAPI.'},
+      },
+    })
+  }
+  return response
+})
+
+export const asArray = value => Array.isArray(value) ? value : []
+
 export function errorMessage(error, fallback = 'Não foi possível concluir a operação') {
   const detail = error?.response?.data?.detail
   if (typeof detail === 'string') return detail
