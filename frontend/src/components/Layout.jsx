@@ -2,7 +2,7 @@ import React,{useContext,useEffect,useState} from 'react'
 import {Avatar,Box,Dialog,DialogContent,Divider,Drawer,IconButton,InputAdornment,List,ListItemButton,ListItemIcon,ListItemText,Menu,MenuItem,TextField,Tooltip,Typography,useTheme} from '@mui/material'
 import {Add,ChevronRight,Close,DarkMode,HelpOutline,LightMode,Logout,MenuOpen,Search,Settings} from '@mui/icons-material'
 import {useLocation,useNavigate} from 'react-router-dom'
-import {api} from '../api'
+import {api,asArray} from '../api'
 import {ColorModeContext} from '../theme'
 import {loadLocalChats} from '../chatStorage'
 
@@ -13,7 +13,7 @@ export default function Layout({children,user,onLogout}){
  const [chats,setChats]=useState([]),[collapsed,setCollapsed]=useState(()=>localStorage.getItem('sophia_sidebar')==='collapsed')
  const [searchOpen,setSearchOpen]=useState(false),[helpOpen,setHelpOpen]=useState(false),[query,setQuery]=useState(''),[results,setResults]=useState([]),[accountAnchor,setAccountAnchor]=useState(null)
  const width=collapsed?compact:wide
- useEffect(()=>{const refresh=()=>api.get('/conversations').then(r=>setChats(r.data)).catch(()=>setChats([]));refresh();window.addEventListener('sophia-conversations-changed',refresh);return()=>window.removeEventListener('sophia-conversations-changed',refresh)},[loc.pathname])
+ useEffect(()=>{const refresh=()=>api.get('/conversations').then(r=>setChats(asArray(r.data))).catch(()=>setChats([]));refresh();window.addEventListener('sophia-conversations-changed',refresh);return()=>window.removeEventListener('sophia-conversations-changed',refresh)},[loc.pathname])
  useEffect(()=>{if(!query.trim()){setResults([]);return}let active=true;Promise.all(chats.map(c=>c.messages?Promise.resolve(c):api.get(`/conversations/${c.id}`).then(r=>r.data).catch(()=>null))).then(data=>{if(!active)return;const term=query.toLowerCase();setResults(data.filter(Boolean).filter(c=>c.title.toLowerCase().includes(term)||c.messages?.some(m=>m.content.toLowerCase().includes(term))))});return()=>{active=false}},[query,chats])
  const toggleSidebar=()=>setCollapsed(value=>{localStorage.setItem('sophia_sidebar',!value?'collapsed':'open');return!value})
  const newChat=()=>{window.dispatchEvent(new Event('sophia-new-chat'));nav('/')}
