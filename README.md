@@ -55,20 +55,31 @@ npm install
 npm run dev
 ```
 
-## Frontend na Netlify
+## Aplicação integral na Netlify
 
-O arquivo `netlify.toml` da raiz configura automaticamente a compilação do
-frontend React, localizado em `frontend`, e publica o diretório `dist`.
+O arquivo `netlify.toml` compila o React e publica uma API em **Netlify
+Functions**. Autenticação, usuários, conversas e chat com Gemini deixam de
+depender de um servidor FastAPI separado.
 
-A Netlify hospeda somente o frontend. Para autenticação, chat, uploads e geração
-de documentos, publique o backend FastAPI separadamente e configure na Netlify:
+No painel do projeto `iasoph`:
 
-```env
-VITE_API_URL=https://seu-backend.example.com/api
-```
+1. Abra **Database** e crie/ative o banco do projeto. A Netlify disponibilizará
+   `NETLIFY_DB_URL` automaticamente às Functions.
+2. Em **Project configuration > Environment variables**, cadastre:
+   - `SECRET_KEY`: valor aleatório com pelo menos 32 caracteres;
+   - `SEED_ADMIN_EMAIL`: e-mail inicial do administrador;
+   - `SEED_ADMIN_PASSWORD`: senha forte inicial;
+   - `GEMINI_API_KEY`: chave do Google AI Studio;
+   - `GEMINI_MODEL`: `gemini-2.5-flash` (opcional).
+3. Marque senhas e chaves como secretas e disponíveis para **Functions**.
+4. Execute **Deploys > Trigger deploy > Clear cache and deploy site**.
 
-Depois de alterar essa variável, execute uma nova implantação para incorporá-la
-ao bundle do Vite.
+A aplicação utiliza `/api` no mesmo domínio. Não configure `VITE_API_URL` como
+`localhost` na Netlify. Verifique a API em
+`https://iasoph.netlify.app/api/health`.
+
+`SEED_ADMIN_PASSWORD` só cria o administrador quando ainda não existe nenhum
+usuário. Depois do primeiro acesso, altere a senha pela Administração.
 
 Com `DATABASE_URL=sqlite:///./data/sophia.db`, o banco e as tabelas são criados
 automaticamente. O seed cria dois setores, o usuário administrador e fontes
