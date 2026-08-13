@@ -11,7 +11,6 @@ api.interceptors.request.use(config => {
   return config
 })
 
-
 // Na hospedagem estática, uma rota /api inexistente pode devolver o index.html
 // com status 200. Sem esta validação, o React interpreta o HTML como dados da
 // API e componentes que esperam listas falham com "map is not a function".
@@ -39,5 +38,8 @@ export function errorMessage(error, fallback = 'Não foi possível concluir a op
   if (typeof detail === 'string') return detail
   if (Array.isArray(detail)) return detail.map(item => item.msg || 'Campo inválido').join('; ')
   if (detail && typeof detail === 'object') return detail.msg || JSON.stringify(detail)
+  if (error?.code === 'ERR_NETWORK' || !error?.response) {
+    return 'A API da SOPH.IA não está disponível. Verifique a configuração das Functions e do banco no Netlify.'
+  }
   return fallback
 }
