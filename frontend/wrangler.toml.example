@@ -1,0 +1,21 @@
+name = "soph-ia"
+compatibility_date = "2026-08-01"
+pages_build_output_dir = "dist"
+
+[vars]
+WORKERS_AI_MODEL = "@cf/qwen/qwen3-30b-a3b-fp8"
+
+# Copie este arquivo para wrangler.toml somente se for publicar pelo Wrangler.
+# No deploy pelo painel Pages, crie estes bindings em Settings > Bindings.
+[[d1_databases]]
+binding = "DB"
+database_name = "sophia-db"
+database_id = "COLE_AQUI_O_ID_DO_D1"
+
+[[r2_buckets]]
+binding = "DOCUMENTS"
+bucket_name = "sophia-documentos"
+
+[ai]
+binding = "AI"
+
