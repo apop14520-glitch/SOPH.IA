@@ -68,7 +68,8 @@ export default function Admin({currentUser}){
    <Box mt={2.5} p={2} border="1px solid" borderColor={aiConfig.web_enabled?'primary.main':'divider'} borderRadius={2.5} bgcolor={aiConfig.web_enabled?'action.selected':'transparent'}>
     <Box display="flex" alignItems="center" justifyContent="space-between" gap={2}><Box><Typography fontWeight={850}>Pesquisa controlada na web</Typography><Typography variant="body2" color="text.secondary">Permite aos usuários complementar a base institucional com fontes públicas oficiais.</Typography></Box><Switch checked={Boolean(aiConfig.web_enabled)} onChange={e=>setAiConfig({...aiConfig,web_enabled:e.target.checked})} inputProps={{'aria-label':'Ativar pesquisa controlada na web'}}/></Box>
     {aiConfig.web_enabled&&<TextField fullWidth multiline minRows={2} sx={{mt:1.5}} label="Domínios oficiais autorizados" value={aiConfig.web_domains||''} onChange={e=>setAiConfig({...aiConfig,web_domains:e.target.value})} helperText="Separe os domínios por vírgula. Subdomínios também serão aceitos."/>}
-    {aiConfig.web_enabled&&!aiConfig.web_configured&&<Alert severity="warning" sx={{mt:1.5}}>A pesquisa web utiliza a chave institucional do Gemini. Selecione Google Gemini e salve uma chave antes de usar este recurso.</Alert>}
+    {aiConfig.web_enabled&&aiConfig.web_configured&&<Alert severity="success" sx={{mt:1.5}}>Pesquisa web configurada por {aiConfig.web_provider==='tavily'?'Tavily':'Google Search'}. Somente fontes dos domínios autorizados serão utilizadas.</Alert>}
+    {aiConfig.web_enabled&&!aiConfig.web_configured&&<Alert severity="warning" sx={{mt:1.5}}>Cadastre o segredo TAVILY_API_KEY nas configurações do Cloudflare Pages para habilitar a pesquisa web sem depender do Gemini.</Alert>}
    </Box>
    {aiMessage&&<Alert severity={aiMessage.severity} onClose={()=>setAiMessage(null)} sx={{mt:2}}>{aiMessage.text}</Alert>}
    <Divider sx={{my:2.5}}/>

@@ -76,7 +76,9 @@ No mesmo account utilizado pelo projeto Pages:
 4. Em **Settings > Variables and Secrets**, adicione como secrets:
    - `SECRET_KEY`: valor aleatório com pelo menos 32 caracteres;
    - `SEED_ADMIN_EMAIL`: e-mail inicial do administrador;
-   - `SEED_ADMIN_PASSWORD`: senha forte inicial.
+   - `SEED_ADMIN_PASSWORD`: senha forte inicial;
+   - `TAVILY_API_KEY`: chave da Tavily para pesquisa controlada na web. Não
+     coloque esse valor no GitHub, no frontend ou em arquivos versionados.
 5. Opcionalmente, adicione `WORKERS_AI_MODEL` com o valor
    `@cf/qwen/qwen3-30b-a3b-fp8`. O administrador também pode escolher entre
    Qwen3 e GLM pela tela de Inteligência Artificial depois do primeiro acesso.
@@ -116,6 +118,15 @@ O arquivo `frontend/wrangler.toml.example` contém um modelo. Copie-o para
 `wrangler.toml`, informe o ID real do D1 e publique com Wrangler. Não envie um
 arquivo com IDs fictícios, pois ele interrompe o build. Para publicação pelo
 painel e GitHub, prefira configurar os bindings na interface do Cloudflare.
+
+### Pesquisa controlada na web
+
+Quando `TAVILY_API_KEY` estiver configurada, a Tavily pesquisa somente nos
+domínios autorizados pelo administrador. O backend valida novamente cada URL,
+envia ao modelo apenas os trechos pertinentes e mostra as páginas utilizadas em
+**Fontes consultadas**. Se a pesquisa estiver desativada, sem chave ou
+temporariamente indisponível, o chat continua com a base institucional sem
+inserir mensagens técnicas no documento gerado.
 
 ### Limitação atual de leitura de arquivos
 
