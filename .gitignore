@@ -15,3 +15,7 @@ outputs/
 *.log
 .idea/
 .vscode/
+.wrangler/
+.dev.vars
+frontend/wrangler.toml
+
