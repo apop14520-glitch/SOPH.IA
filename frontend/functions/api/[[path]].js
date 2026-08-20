@@ -332,7 +332,10 @@ async function generateAnswer(env, prompt, history, attachments, institutional =
     } catch (error) {
       if (!isGeminiQuotaError(error)) throw error
       const fallback = await runWorkersFallback(env, messages, 6000)
-      return {text: `${fallback}\n\n---\n\n**Aviso sobre a pesquisa:** a cota de pesquisa do Gemini está temporariamente esgotada. Esta resposta foi elaborada com a base institucional e o modelo alternativo do Cloudflare, sem consulta à web.`, sources: []}
+      // A indisponibilidade temporária de uma ferramenta não deve contaminar o
+      // conteúdo do documento solicitado. O chat continua pelo Workers AI e a
+      // ausência de fontes web fica representada pela lista vazia de fontes.
+      return {text: fallback.trim(), sources: []}
     }
   }
   const answer = await runInstitutionalAI(env, messages, 6000)
