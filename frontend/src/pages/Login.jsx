@@ -1,7 +1,8 @@
-import React,{useMemo,useState} from 'react'
+import React,{useContext,useState} from 'react'
 import {Alert,Box,Button,Card,CardContent,FormControl,IconButton,InputLabel,Link,MenuItem,Select,TextField,Typography} from '@mui/material'
-import {ArrowBack} from '@mui/icons-material'
+import {ArrowBack,DarkModeOutlined,LightModeOutlined} from '@mui/icons-material'
 import {api,errorMessage} from '../api'
+import {ColorModeContext} from '../theme'
 
 const sectors=['Presidência','Diretoria Administrativa e Financeira','Diretoria Técnica','Tecnologia da Informação','Recursos Humanos','Licitações e Contratos','Jurídico','Outro']
 const loadUsers=()=>{try{return JSON.parse(localStorage.getItem('sophia_users')||'[]')}catch{return[]}}
@@ -9,6 +10,7 @@ const saveUsers=users=>localStorage.setItem('sophia_users',JSON.stringify(users)
 const strong=password=>password.length>=8&&/[A-Z]/.test(password)&&/[a-z]/.test(password)&&/\d/.test(password)&&/[^A-Za-z0-9]/.test(password)
 
 export default function Login({onLogin}){
+ const {mode:colorMode,toggle}=useContext(ColorModeContext)
  const resetMode=location.hash.includes('/redefinir'),params=new URLSearchParams(location.hash.split('?')[1]||'')
  const [mode,setMode]=useState(resetMode?'reset':'login'),[email,setEmail]=useState(''),[password,setPassword]=useState(''),[error,setError]=useState(''),[message,setMessage]=useState('')
  const [form,setForm]=useState({name:'',sector:'',email:'',password:'',confirm:''}),token=params.get('token')
@@ -17,8 +19,9 @@ export default function Login({onLogin}){
  const requestReset=e=>{e.preventDefault();setError('');const user=loadUsers().find(u=>u.email.toLowerCase()===form.email.toLowerCase());if(!user&&form.email.toLowerCase()!=='admin@sophia.ro.gov.br'){setError('Não foi localizado um cadastro com esse e-mail.');return}const resetToken=btoa(`${form.email}|${Date.now()+3600000}`);localStorage.setItem(`sophia_reset_${resetToken}`,form.email);const link=`${location.origin}${location.pathname}#/redefinir?token=${encodeURIComponent(resetToken)}`;setMessage(`Solicitação registrada. No ambiente local, use este link de redefinição: ${link}`)}
  const reset=e=>{e.preventDefault();setError('');const resetEmail=localStorage.getItem(`sophia_reset_${token}`);if(!resetEmail){setError('Link inválido ou expirado. Solicite uma nova redefinição.');return}if(!strong(form.password)){setError('A senha deve ter 8 caracteres, maiúscula, minúscula, número e símbolo.');return}if(form.password!==form.confirm){setError('A confirmação não corresponde.');return}const users=loadUsers(),index=users.findIndex(u=>u.email===resetEmail);if(index>=0){users[index].password=form.password;saveUsers(users)}else localStorage.setItem('sophia_admin_password',form.password);localStorage.removeItem(`sophia_reset_${token}`);setEmail(resetEmail);setPassword('');setMessage('Senha alterada. Clique em Acessar para entrar.');setMode('login');location.hash='#/'}
  const title={login:'Acesse a SOPH.IA',register:'Criar cadastro',forgot:'Recuperar senha',reset:'Definir nova senha'}[mode]
- return <Box sx={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:{xs:'center',md:'flex-end'},p:{xs:2,sm:4,md:7},backgroundImage:"linear-gradient(90deg,rgba(24,12,8,.18),rgba(24,12,8,.48)),url('/porto-soph-login.jpg')",backgroundSize:'cover',backgroundPosition:'center',backgroundAttachment:{md:'fixed'}}}>
-  <Card sx={{width:'min(460px,100%)',maxHeight:'calc(100vh - 32px)',overflowY:'auto',borderRadius:4,backgroundColor:'rgba(31,27,24,.96)',backdropFilter:'blur(12px)',boxShadow:'0 24px 80px rgba(0,0,0,.42)',border:'1px solid rgba(255,255,255,.12)'}}><CardContent sx={{p:{xs:3,sm:4}}}>
+ return <Box sx={{minHeight:'100vh',display:'grid',placeItems:'center',p:{xs:2,sm:4},position:'relative',backgroundImage:`linear-gradient(rgba(20,14,10,.50),rgba(20,14,10,.50)),url('/porto-soph-login.jpg')`,backgroundSize:'cover',backgroundPosition:'center',backgroundAttachment:{md:'fixed'}}}>
+  <IconButton onClick={toggle} aria-label={colorMode==='dark'?'Ativar tema claro':'Ativar tema escuro'} sx={{position:'fixed',top:{xs:16,sm:24},right:{xs:16,sm:24},zIndex:2,width:44,height:44,color:'#fff',backgroundColor:'rgba(20,16,13,.58)',backdropFilter:'blur(12px)',border:'1px solid rgba(255,255,255,.24)','&:hover':{backgroundColor:'rgba(242,101,34,.88)'}}}>{colorMode==='dark'?<LightModeOutlined/>:<DarkModeOutlined/>}</IconButton>
+  <Card sx={{width:'min(460px,100%)',maxHeight:'calc(100vh - 32px)',overflowY:'auto',borderRadius:4,backgroundColor:colorMode==='dark'?'rgba(31,27,24,.96)':'rgba(255,255,255,.94)',backdropFilter:'blur(16px)',boxShadow:'0 24px 80px rgba(0,0,0,.38)',border:'1px solid',borderColor:colorMode==='dark'?'rgba(255,255,255,.13)':'rgba(255,255,255,.72)'}}><CardContent sx={{p:{xs:3,sm:4}}}>
   {mode!=='login'&&<IconButton onClick={()=>{setMode('login');setError('');setMessage('')}}><ArrowBack/></IconButton>}<Typography variant="h3" color="primary" fontWeight={900}>SOPH.IA</Typography><Typography variant="h6" mt={1} mb={3}>{title}</Typography>
   {error&&<Alert severity="error" sx={{mb:2}}>{error}</Alert>}{message&&<Alert severity="success" sx={{mb:2,wordBreak:'break-word'}}>{message}</Alert>}
   {mode==='login'&&<Box component="form" onSubmit={submitLogin} display="grid" gap={2}><TextField label="E-mail" value={email} onChange={e=>setEmail(e.target.value)}/><TextField label="Senha" type="password" value={password} onChange={e=>setPassword(e.target.value)}/><Box display="flex" justifyContent="space-between"><Link component="button" type="button" onClick={()=>{setForm({...form,email});setMode('forgot')}} sx={{color:'primary.main',fontWeight:800,fontSize:13}}>Esqueci a senha</Link><Link component="button" type="button" onClick={()=>setMode('register')} sx={{color:'primary.main',fontWeight:800,fontSize:13}}>Cadastre-se</Link></Box><Button type="submit" variant="contained" size="large">Acessar</Button></Box>}
