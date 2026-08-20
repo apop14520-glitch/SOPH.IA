@@ -39,7 +39,8 @@ export function errorMessage(error, fallback = 'Não foi possível concluir a op
   if (Array.isArray(detail)) return detail.map(item => item.msg || 'Campo inválido').join('; ')
   if (detail && typeof detail === 'object') return detail.msg || JSON.stringify(detail)
   if (error?.code === 'ERR_NETWORK' || !error?.response) {
-    return 'A API da SOPH.IA não está disponível. Verifique a configuração das Functions e do banco no Netlify.'
+    return 'A API da SOPH.IA não está disponível. Verifique as Pages Functions e os bindings DB e AI no Cloudflare.'
   }
   return fallback
 }
+
