@@ -233,6 +233,17 @@ async function runGemini(apiKey, model, messages, maxTokens = 6000) {
   return text
 }
 
+const isGeminiQuotaError = error => /quota|rate.?limit|resource.?exhausted|429|exceeded your current quota/i.test(String(error?.message || error || ''))
+
+async function runWorkersFallback(env, messages, maxTokens = 6000) {
+  if (!env.AI) throw new Error('O modelo alternativo do Cloudflare não está configurado')
+  const fallbackModel = await setting(env, 'workers_ai_model') || env.WORKERS_AI_MODEL || '@cf/qwen/qwen3-30b-a3b-fp8'
+  const result = await env.AI.run(fallbackModel, {messages, max_tokens: maxTokens, temperature: 0.35})
+  const text = modelText(result)
+  if (!text) throw new Error('O modelo alternativo retornou uma resposta vazia')
+  return text
+}
+
 async function runInstitutionalAI(env, messages, maxTokens = 6000) {
   const config = await aiConfiguration(env)
   if (!config.enabled) throw new Error('O provedor institucional de IA está desativado')
@@ -240,7 +251,12 @@ async function runInstitutionalAI(env, messages, maxTokens = 6000) {
     const encryptedKey = await setting(env, 'gemini_api_key')
     const apiKey = await decryptSecret(env, encryptedKey)
     if (!apiKey) throw new Error('A chave institucional do Gemini não está configurada')
-    return runGemini(apiKey, config.model || 'gemini-3.6-flash', messages, maxTokens)
+    try {
+      return await runGemini(apiKey, config.model || 'gemini-3.6-flash', messages, maxTokens)
+    } catch (error) {
+      if (!isGeminiQuotaError(error)) throw error
+      return runWorkersFallback(env, messages, maxTokens)
+    }
   }
   if (!env.AI) throw new Error('Binding Workers AI não configurado')
   const result = await env.AI.run(config.model, {messages, max_tokens: maxTokens, temperature: 0.35})
@@ -310,7 +326,15 @@ async function generateAnswer(env, prompt, history, attachments, institutional =
     ...history.slice(-12).map(item => ({role: item.role === 'assistant' ? 'assistant' : 'user', content: item.content})),
     {role: 'user', content: `${prompt}${references}${institutionalContext}`},
   ]
-  if (useWeb) return runGeminiWebSearch(env, messages, 6000)
+  if (useWeb) {
+    try {
+      return await runGeminiWebSearch(env, messages, 6000)
+    } catch (error) {
+      if (!isGeminiQuotaError(error)) throw error
+      const fallback = await runWorkersFallback(env, messages, 6000)
+      return {text: `${fallback}\n\n---\n\n**Aviso sobre a pesquisa:** a cota de pesquisa do Gemini está temporariamente esgotada. Esta resposta foi elaborada com a base institucional e o modelo alternativo do Cloudflare, sem consulta à web.`, sources: []}
+    }
+  }
   const answer = await runInstitutionalAI(env, messages, 6000)
   if (!answer?.trim()) throw new Error('O Workers AI retornou uma resposta vazia')
   return {text: answer.trim(), sources: []}
