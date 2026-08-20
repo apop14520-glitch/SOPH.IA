@@ -55,7 +55,77 @@ npm install
 npm run dev
 ```
 
-## Aplicação integral na Netlify
+## Publicação no Cloudflare Pages (recomendado)
+
+O frontend React e a API agora podem ser executados integralmente na
+Cloudflare. A interface é publicada pelo Pages, as rotas `/api/*` são atendidas
+por Pages Functions, os usuários e as conversas ficam no D1, os arquivos no R2
+e a geração de texto usa o Workers AI. Não é necessário manter FastAPI, Ollama
+ou uma máquina ligada para essa implantação.
+
+### 1. Criar os recursos no Cloudflare
+
+No mesmo account utilizado pelo projeto Pages:
+
+1. Em **Workers & Pages > D1 SQL Database**, crie `sophia-db`.
+2. Em **R2 Object Storage**, crie `sophia-documentos`.
+3. Abra o projeto Pages e, em **Settings > Bindings**, adicione:
+   - D1 database, nome da variável `DB`, banco `sophia-db`;
+   - R2 bucket, nome da variável `DOCUMENTS`, bucket `sophia-documentos`;
+   - Workers AI, nome da variável `AI`.
+4. Em **Settings > Variables and Secrets**, adicione como secrets:
+   - `SECRET_KEY`: valor aleatório com pelo menos 32 caracteres;
+   - `SEED_ADMIN_EMAIL`: e-mail inicial do administrador;
+   - `SEED_ADMIN_PASSWORD`: senha forte inicial.
+5. Opcionalmente, adicione `WORKERS_AI_MODEL` com o valor
+   `@cf/qwen/qwen3-30b-a3b-fp8`. O administrador também pode escolher entre
+   Qwen3 e GLM pela tela de Inteligência Artificial depois do primeiro acesso.
+
+Não crie `VITE_API_URL` em produção. A aplicação chama `/api` no mesmo domínio,
+sem expor token de API no navegador.
+
+### 2. Configurar o build conectado ao GitHub
+
+Use estas configurações no Cloudflare Pages:
+
+```text
+Root directory: frontend
+Build command: npm run build
+Build output directory: dist
+Node.js: 20 ou superior
+```
+
+O diretório `frontend/functions` é detectado automaticamente e publicado junto
+com o site. O arquivo `frontend/public/_redirects` mantém as rotas do React
+funcionando quando uma página é atualizada pelo navegador.
+
+Depois do deploy, valide:
+
+```text
+https://SEU-DOMINIO.pages.dev/api/health
+```
+
+A resposta deve informar `platform: cloudflare-pages`, `ai: true` e
+`database: true`. No primeiro acesso, as tabelas, setores e o administrador são
+criados automaticamente. `SEED_ADMIN_PASSWORD` não altera usuários que já
+existam; troque a senha pela Administração.
+
+### 3. Publicação opcional pelo Wrangler
+
+O arquivo `frontend/wrangler.toml.example` contém um modelo. Copie-o para
+`wrangler.toml`, informe o ID real do D1 e publique com Wrangler. Não envie um
+arquivo com IDs fictícios, pois ele interrompe o build. Para publicação pelo
+painel e GitHub, prefira configurar os bindings na interface do Cloudflare.
+
+### Limitação atual de leitura de arquivos
+
+PDF e DOCX são guardados e podem ser visualizados ou baixados pelo R2. Arquivos
+TXT, Markdown e CSV também têm o texto incorporado diretamente ao contexto. A
+extração completa de PDF/DOCX no ambiente Cloudflare deve ser adicionada em uma
+segunda etapa com pipeline de extração ou AI Search; o sistema não afirma ter
+lido conteúdo que ainda não foi extraído.
+
+## Aplicação integral na Netlify (legado)
 
 O arquivo `netlify.toml` compila o React e publica uma API em **Netlify
 Functions**. Autenticação, usuários, conversas e chat com Gemini deixam de
@@ -175,3 +245,4 @@ Para validar o frontend:
 cd frontend
 npm run build
 ```
+
