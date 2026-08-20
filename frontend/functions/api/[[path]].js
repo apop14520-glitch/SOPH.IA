@@ -86,7 +86,25 @@ async function currentUser(request, env) {
 }
 
 const publicUser = user => ({...user, active: Boolean(user.active)})
-const titleFor = text => String(text).trim().replace(/\s+/g, ' ').slice(0, 68).replace(/^./u, c => c.toUpperCase())
+const TITLE_MAX_WORDS = 6
+const TITLE_ACRONYMS = /^(soph\.?ia|soph|etp|tr|rilc|sei|ti|rh|pdf|docx|ia)$/i
+const formatTitle = value => {
+  const words = String(value || 'Nova conversa')
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/^[#*\s"“”']+|[#*\s"“”'.:;!?]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, TITLE_MAX_WORDS)
+  const sentence = words.map((word, index) => {
+    if (TITLE_ACRONYMS.test(word)) return word.toLocaleUpperCase('pt-BR').replace('SOPHIA', 'SOPH.IA')
+    const lower = word.toLocaleLowerCase('pt-BR')
+    return index === 0 ? lower.charAt(0).toLocaleUpperCase('pt-BR') + lower.slice(1) : lower
+  }).join(' ')
+  return sentence || 'Nova conversa'
+}
+const titleFor = text => formatTitle(String(text).trim().replace(/\s+/g, ' '))
 const parseJson = (value, fallback = []) => { try { return JSON.parse(value) } catch { return fallback } }
 
 function modelText(result) {
@@ -118,17 +136,17 @@ function modelText(result) {
   return ''
 }
 
-async function conversationTitle(env, prompt) {
-  const fallback = titleFor(prompt)
+async function conversationTitle(env, conversationContent) {
+  const fallback = titleFor(conversationContent)
   try {
     const saved = await env.DB.prepare("SELECT value FROM settings WHERE key='workers_ai_model'").first()
     const model = saved?.value || env.WORKERS_AI_MODEL || '@cf/qwen/qwen3-30b-a3b-fp8'
     const result = await env.AI.run(model, {messages:[
-      {role:'system',content:'Crie um título curto em português brasileiro que resuma o pedido do usuário. Use de 3 a 8 palavras, formato de frase, somente a primeira palavra em maiúscula, preservando siglas oficiais como SOPH, ETP, TR, RILC, SEI, TI, RH e IA. Responda somente com o título, sem aspas, ponto final, explicação ou markdown.'},
-      {role:'user',content:String(prompt).slice(0,1800)},
+      {role:'system',content:'Crie um título técnico, objetivo e específico que represente o assunto central da conversa. Use obrigatoriamente de 3 a 6 palavras. Não copie a solicitação inteira e elimine expressões genéricas como "elabore", "faça", "preciso" e "por favor" quando elas não forem essenciais. Priorize o tipo de documento e o assunto, por exemplo: "Memorando sobre licenças Revit", "Análise do RILC da SOPH" ou "Migração do sistema ERP". Use formato de frase: somente a primeira palavra começa com maiúscula, preservando siglas oficiais como SOPH, ETP, TR, RILC, SEI, TI, RH e IA. Responda somente com o título, sem aspas, ponto final, explicação ou markdown.'},
+      {role:'user',content:`Resuma o assunto destas mensagens da conversa:\n${String(conversationContent).slice(0,4000)}`},
     ],max_tokens:32,temperature:0.2})
     const raw = modelText(result)
-    const clean = raw.replace(/<think>[\s\S]*?<\/think>/gi,'').replace(/^[#*\s"“”']+|[#*\s"“”'.:;!?]+$/g,'').replace(/\s+/g,' ').trim().slice(0,68)
+    const clean = formatTitle(raw)
     return clean.length >= 3 ? clean : fallback
   } catch { return fallback }
 }
@@ -225,9 +243,10 @@ async function handler(context) {
       const id = Number(match[1])
       const conversation = await env.DB.prepare('SELECT * FROM conversations WHERE id=? AND user_id=?').bind(id, user.id).first()
       if (!conversation) return fail('Conversa não encontrada.', 404)
-      const firstMessage = await env.DB.prepare("SELECT content FROM chat_messages WHERE conversation_id=? AND role='user' ORDER BY id LIMIT 1").bind(id).first()
-      if (!firstMessage?.content) return fail('A conversa ainda não possui conteúdo para resumir.')
-      const title = await conversationTitle(env, firstMessage.content)
+      const userMessages = (await env.DB.prepare("SELECT content FROM chat_messages WHERE conversation_id=? AND role='user' ORDER BY id DESC LIMIT 10").bind(id).all()).results.reverse()
+      if (!userMessages.length) return fail('A conversa ainda não possui conteúdo para resumir.')
+      const conversationContent = userMessages.map((message, index) => `${index + 1}. ${message.content}`).join('\n')
+      const title = await conversationTitle(env, conversationContent)
       await env.DB.prepare('UPDATE conversations SET title=?, updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(title, id).run()
       return json({id, title})
     }
