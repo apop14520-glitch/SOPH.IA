@@ -89,6 +89,21 @@ const publicUser = user => ({...user, active: Boolean(user.active)})
 const titleFor = text => String(text).trim().replace(/\s+/g, ' ').slice(0, 68).replace(/^./u, c => c.toUpperCase())
 const parseJson = (value, fallback = []) => { try { return JSON.parse(value) } catch { return fallback } }
 
+async function conversationTitle(env, prompt) {
+  const fallback = titleFor(prompt)
+  try {
+    const saved = await env.DB.prepare("SELECT value FROM settings WHERE key='workers_ai_model'").first()
+    const model = saved?.value || env.WORKERS_AI_MODEL || '@cf/qwen/qwen3-30b-a3b-fp8'
+    const result = await env.AI.run(model, {messages:[
+      {role:'system',content:'Crie um título curto em português brasileiro que resuma o pedido do usuário. Use de 3 a 8 palavras, formato de frase, somente a primeira palavra em maiúscula, preservando siglas oficiais como SOPH, ETP, TR, RILC, SEI, TI, RH e IA. Responda somente com o título, sem aspas, ponto final, explicação ou markdown.'},
+      {role:'user',content:String(prompt).slice(0,1800)},
+    ],max_tokens:32,temperature:0.2})
+    const raw = typeof result === 'string' ? result : result?.response || result?.result?.response || ''
+    const clean = raw.replace(/<think>[\s\S]*?<\/think>/gi,'').replace(/^[#*\s"“”']+|[#*\s"“”'.:;!?]+$/g,'').replace(/\s+/g,' ').trim().slice(0,68)
+    return clean.length >= 3 ? clean : fallback
+  } catch { return fallback }
+}
+
 async function generateAnswer(env, prompt, history, attachments) {
   if (!env.AI) throw new Error('Binding Workers AI não configurado')
   const references = attachments.length
@@ -172,7 +187,8 @@ async function handler(context) {
       }
       const answer = await generateAnswer(env, prompt, history, attachments)
       const inserted = await env.DB.prepare("INSERT INTO chat_messages(conversation_id,role,content,sources) VALUES(?,'assistant',?,?)").bind(id, answer, JSON.stringify(attachments.map(item => ({id: item.id, title: item.title})))).run()
-      await env.DB.prepare('UPDATE conversations SET title=CASE WHEN title=? THEN ? ELSE title END, updated_at=CURRENT_TIMESTAMP WHERE id=?').bind('Nova conversa', titleFor(prompt), id).run()
+      const generatedTitle = conversation.title === 'Nova conversa' ? await conversationTitle(env, prompt) : conversation.title
+      await env.DB.prepare('UPDATE conversations SET title=?, updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(generatedTitle, id).run()
       return json(await env.DB.prepare('SELECT * FROM chat_messages WHERE id=?').bind(inserted.meta.last_row_id).first(), 201)
     }
 
