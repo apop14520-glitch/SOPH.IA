@@ -136,16 +136,78 @@ function modelText(result) {
   return ''
 }
 
+async function encryptionKey(env) {
+  const digest = await crypto.subtle.digest('SHA-256', encoder.encode(env.SECRET_KEY))
+  return crypto.subtle.importKey('raw', digest, 'AES-GCM', false, ['encrypt', 'decrypt'])
+}
+
+async function encryptSecret(env, value) {
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const encrypted = await crypto.subtle.encrypt({name: 'AES-GCM', iv}, await encryptionKey(env), encoder.encode(value))
+  return `v1.${base64url(iv)}.${base64url(encrypted)}`
+}
+
+async function decryptSecret(env, value) {
+  try {
+    const [version, iv, encrypted] = String(value || '').split('.')
+    if (version !== 'v1') return ''
+    const decrypted = await crypto.subtle.decrypt({name: 'AES-GCM', iv: fromBase64url(iv)}, await encryptionKey(env), fromBase64url(encrypted))
+    return new TextDecoder().decode(decrypted)
+  } catch { return '' }
+}
+
+async function setting(env, key) {
+  return (await env.DB.prepare('SELECT value FROM settings WHERE key=?').bind(key).first())?.value || ''
+}
+
+async function saveSetting(env, key, value) {
+  await env.DB.prepare('INSERT INTO settings(key,value,updated_at) VALUES(?,?,CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP').bind(key, String(value)).run()
+}
+
+async function aiConfiguration(env) {
+  const provider = await setting(env, 'ai_provider') || 'cloudflare'
+  const model = await setting(env, 'ai_model') || await setting(env, 'workers_ai_model') || env.WORKERS_AI_MODEL || '@cf/qwen/qwen3-30b-a3b-fp8'
+  return {provider, model, enabled: (await setting(env, 'ai_enabled') || 'true') !== 'false'}
+}
+
+async function runGemini(apiKey, model, messages, maxTokens = 6000) {
+  const system = messages.find(item => item.role === 'system')?.content || ''
+  const contents = messages.filter(item => item.role !== 'system').map(item => ({role: item.role === 'assistant' ? 'model' : 'user', parts: [{text: item.content}]}))
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+    method: 'POST',
+    headers: {'content-type': 'application/json', 'x-goog-api-key': apiKey},
+    body: JSON.stringify({systemInstruction: system ? {parts: [{text: system}]} : undefined, contents, generationConfig: {maxOutputTokens: maxTokens}}),
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(payload?.error?.message || `Falha na API Gemini (${response.status})`)
+  const text = (payload?.candidates?.[0]?.content?.parts || []).map(part => part?.text || '').join('\n').trim()
+  if (!text) throw new Error('O Gemini retornou uma resposta vazia')
+  return text
+}
+
+async function runInstitutionalAI(env, messages, maxTokens = 6000) {
+  const config = await aiConfiguration(env)
+  if (!config.enabled) throw new Error('O provedor institucional de IA está desativado')
+  if (config.provider === 'gemini') {
+    const encryptedKey = await setting(env, 'gemini_api_key')
+    const apiKey = await decryptSecret(env, encryptedKey)
+    if (!apiKey) throw new Error('A chave institucional do Gemini não está configurada')
+    return runGemini(apiKey, config.model || 'gemini-3.6-flash', messages, maxTokens)
+  }
+  if (!env.AI) throw new Error('Binding Workers AI não configurado')
+  const result = await env.AI.run(config.model, {messages, max_tokens: maxTokens, temperature: 0.35})
+  const text = modelText(result)
+  if (!text) throw new Error('O Workers AI retornou uma resposta vazia')
+  return text
+}
+
 async function conversationTitle(env, conversationContent) {
   const fallback = titleFor(conversationContent)
   try {
-    const saved = await env.DB.prepare("SELECT value FROM settings WHERE key='workers_ai_model'").first()
-    const model = saved?.value || env.WORKERS_AI_MODEL || '@cf/qwen/qwen3-30b-a3b-fp8'
-    const result = await env.AI.run(model, {messages:[
+    const raw = await runInstitutionalAI(env, [
       {role:'system',content:'Crie um título técnico, objetivo e específico que represente o assunto central da conversa. Use obrigatoriamente de 3 a 6 palavras. Não copie a solicitação inteira e elimine expressões genéricas como "elabore", "faça", "preciso" e "por favor" quando elas não forem essenciais. Priorize o tipo de documento e o assunto, por exemplo: "Memorando sobre licenças Revit", "Análise do RILC da SOPH" ou "Migração do sistema ERP". Use formato de frase: somente a primeira palavra começa com maiúscula, preservando siglas oficiais como SOPH, ETP, TR, RILC, SEI, TI, RH e IA. Responda somente com o título, sem aspas, ponto final, explicação ou markdown.'},
       {role:'user',content:`Resuma o assunto destas mensagens da conversa:\n${String(conversationContent).slice(0,4000)}`},
-    ],max_tokens:32,temperature:0.2})
-    const raw = modelText(result)
+    ], 32)
     const clean = formatTitle(raw)
     return clean.length >= 3 ? clean : fallback
   } catch { return fallback }
@@ -188,7 +250,6 @@ async function institutionalReferences(env, prompt, attachments = []) {
 }
 
 async function generateAnswer(env, prompt, history, attachments, institutional = []) {
-  if (!env.AI) throw new Error('Binding Workers AI não configurado')
   const references = attachments.length
     ? `\n\nArquivos anexados nesta conversa:\n${attachments.map(item => `- ${item.title} (${item.category})${item.content ? `\n${item.content.slice(0, 12000)}` : ''}`).join('\n')}`
     : ''
@@ -201,10 +262,7 @@ async function generateAnswer(env, prompt, history, attachments, institutional =
     ...history.slice(-12).map(item => ({role: item.role === 'assistant' ? 'assistant' : 'user', content: item.content})),
     {role: 'user', content: `${prompt}${references}${institutionalContext}`},
   ]
-  const saved = await env.DB.prepare("SELECT value FROM settings WHERE key='workers_ai_model'").first()
-  const model = saved?.value || env.WORKERS_AI_MODEL || '@cf/qwen/qwen3-30b-a3b-fp8'
-  const result = await env.AI.run(model, {messages, max_tokens: 6000, temperature: 0.35})
-  const answer = modelText(result)
+  const answer = await runInstitutionalAI(env, messages, 6000)
   if (!answer?.trim()) throw new Error('O Workers AI retornou uma resposta vazia')
   return answer.trim()
 }
@@ -244,7 +302,17 @@ async function handler(context) {
     if (path === '/auth/me') return json(publicUser(user))
     if (path === '/sectors' && method === 'GET') return json((await env.DB.prepare('SELECT * FROM sectors ORDER BY name').all()).results)
 
-    if (path === '/conversations' && method === 'GET') return json((await env.DB.prepare('SELECT id,title,created_at,updated_at FROM conversations WHERE user_id=? ORDER BY updated_at DESC').bind(user.id).all()).results)
+    if (path === '/conversations' && method === 'GET') {
+      const conversations = (await env.DB.prepare("SELECT c.id,c.title,c.created_at,c.updated_at,(SELECT content FROM chat_messages m WHERE m.conversation_id=c.id AND m.role='user' ORDER BY m.id LIMIT 1) first_prompt FROM conversations c WHERE c.user_id=? AND EXISTS(SELECT 1 FROM chat_messages m WHERE m.conversation_id=c.id) ORDER BY c.updated_at DESC").bind(user.id).all()).results
+      for (const conversation of conversations) {
+        if (/^nova conversa$/i.test(conversation.title) && conversation.first_prompt) {
+          conversation.title = titleFor(conversation.first_prompt)
+          await env.DB.prepare('UPDATE conversations SET title=? WHERE id=?').bind(conversation.title, conversation.id).run()
+        }
+        delete conversation.first_prompt
+      }
+      return json(conversations)
+    }
     if (path === '/conversations' && method === 'POST') {
       const result = await env.DB.prepare('INSERT INTO conversations(title,user_id) VALUES(?,?)').bind(body.title || 'Nova conversa', user.id).run()
       return json(await env.DB.prepare('SELECT * FROM conversations WHERE id=?').bind(result.meta.last_row_id).first(), 201)
@@ -299,7 +367,6 @@ async function handler(context) {
       if (!(file instanceof File)) return fail('Selecione um arquivo.')
       if (file.size > 20 * 1024 * 1024) return fail('O arquivo excede o limite de 20 MB.', 413)
       const key = `${user.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
-      if (env.DOCUMENTS) await env.DOCUMENTS.put(key, file.stream(), {httpMetadata: {contentType: file.type}})
       const canRead = file.type.startsWith('text/') || /\.(txt|md|csv)$/i.test(file.name)
       let content = canRead ? (await file.text()).slice(0, 120000) : ''
       if (!content && env.AI?.toMarkdown) {
@@ -309,6 +376,8 @@ async function handler(context) {
           content = String(conversion?.data || '').trim().slice(0, 120000)
         } catch {}
       }
+      if (!content && /\.(pdf|docx)$/i.test(file.name)) return fail('Não foi possível extrair o texto deste documento. Verifique se o PDF não está protegido ou corrompido e tente novamente.', 422)
+      if (env.DOCUMENTS) await env.DOCUMENTS.put(key, file.stream(), {httpMetadata: {contentType: file.type}})
       const result = await env.DB.prepare('INSERT INTO knowledge(title,category,filename,mime_type,storage_key,content) VALUES(?,?,?,?,?,?)')
         .bind(form.get('title') || file.name, form.get('category') || 'Documento', file.name, file.type || 'application/octet-stream', env.DOCUMENTS ? key : null, content).run()
       return json(await env.DB.prepare('SELECT id,title,category,filename,mime_type,created_at FROM knowledge WHERE id=?').bind(result.meta.last_row_id).first(), 201)
@@ -357,22 +426,37 @@ async function handler(context) {
     }
 
     if (path === '/admin/ai' && method === 'GET') {
-      const saved = await env.DB.prepare("SELECT value FROM settings WHERE key='workers_ai_model'").first()
-      return json({provider: 'cloudflare', enabled: true, model: saved?.value || env.WORKERS_AI_MODEL || '@cf/qwen/qwen3-30b-a3b-fp8', configured: Boolean(env.AI)})
+      const config = await aiConfiguration(env)
+      const encryptedKey = config.provider === 'gemini' ? await setting(env, 'gemini_api_key') : ''
+      const configured = config.provider === 'gemini' ? Boolean(await decryptSecret(env, encryptedKey)) : Boolean(env.AI)
+      return json({...config, configured, masked_api_key: configured && config.provider === 'gemini' ? '••••••••••••••••' : ''})
     }
     if (path === '/admin/ai/test' && method === 'POST') {
       if (!['admin','gerente'].includes(user.role)) return fail('Acesso restrito.', 403)
-      const selectedModel = String(body.model || env.WORKERS_AI_MODEL || '@cf/qwen/qwen3-30b-a3b-fp8')
+      const provider = String(body.provider || 'cloudflare')
+      const selectedModel = String(body.model || (provider === 'gemini' ? 'gemini-3.6-flash' : env.WORKERS_AI_MODEL || '@cf/qwen/qwen3-30b-a3b-fp8'))
+      if (provider === 'gemini') {
+        const apiKey = String(body.api_key || '').trim() || await decryptSecret(env, await setting(env, 'gemini_api_key'))
+        if (!apiKey) return fail('Informe e salve uma chave API do Gemini.', 422)
+        await runGemini(apiKey, selectedModel, [{role:'user',content:'Responda somente: conexão ativa.'}], 64)
+        return json({message: `Conexão com o Gemini confirmada. Modelo ${selectedModel}.`})
+      }
       const result = await env.AI.run(selectedModel, {messages:[{role:'user',content:'Responda somente: conexão ativa.'}],max_tokens:64,temperature:0.1})
       if (!modelText(result)) return fail('O Workers AI retornou uma resposta vazia.', 422)
       return json({message: 'Conexão com o Cloudflare Workers AI confirmada.'})
     }
     if (path === '/admin/ai' && method === 'PUT') {
       if (!['admin','gerente'].includes(user.role)) return fail('Acesso restrito.', 403)
-      const allowed = ['@cf/qwen/qwen3-30b-a3b-fp8', '@cf/zai-org/glm-4.7-flash']
-      const selectedModel = allowed.includes(body.model) ? body.model : (env.WORKERS_AI_MODEL || allowed[0])
-      await env.DB.prepare("INSERT INTO settings(key,value,updated_at) VALUES('workers_ai_model',?,CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP").bind(selectedModel).run()
-      return json({provider: 'cloudflare', enabled: true, model: selectedModel, configured: true})
+      const provider = ['cloudflare','gemini'].includes(body.provider) ? body.provider : 'cloudflare'
+      const cloudflareModels = ['@cf/qwen/qwen3-30b-a3b-fp8', '@cf/zai-org/glm-4.7-flash']
+      const selectedModel = provider === 'gemini' ? 'gemini-3.6-flash' : (cloudflareModels.includes(body.model) ? body.model : cloudflareModels[0])
+      if (provider === 'gemini' && String(body.api_key || '').trim()) await saveSetting(env, 'gemini_api_key', await encryptSecret(env, String(body.api_key).trim()))
+      if (provider === 'gemini' && !await decryptSecret(env, await setting(env, 'gemini_api_key'))) return fail('Informe uma chave API válida do Gemini.', 422)
+      await saveSetting(env, 'ai_provider', provider)
+      await saveSetting(env, 'ai_model', selectedModel)
+      await saveSetting(env, 'ai_enabled', body.enabled === false ? 'false' : 'true')
+      if (provider === 'cloudflare') await saveSetting(env, 'workers_ai_model', selectedModel)
+      return json({provider, enabled: body.enabled !== false, model: selectedModel, configured: provider === 'gemini' ? true : Boolean(env.AI), masked_api_key: provider === 'gemini' ? '••••••••••••••••' : ''})
     }
     if (path === '/admin/learning' && method === 'GET') return json([])
     if (path === '/documents' && method === 'GET') return json([])
