@@ -86,7 +86,7 @@ async function currentUser(request, env) {
 }
 
 const publicUser = user => ({...user, active: Boolean(user.active)})
-const TITLE_MAX_WORDS = 6
+const TITLE_MAX_WORDS = 4
 const TITLE_ACRONYMS = /^(soph\.?ia|soph|etp|tr|rilc|sei|ti|rh|pdf|docx|ia)$/i
 const formatTitle = value => {
   const words = String(value || 'Nova conversa')
@@ -205,7 +205,7 @@ async function conversationTitle(env, conversationContent) {
   const fallback = titleFor(conversationContent)
   try {
     const raw = await runInstitutionalAI(env, [
-      {role:'system',content:'Crie um título técnico, objetivo e específico que represente o assunto central da conversa. Use obrigatoriamente de 3 a 6 palavras. Não copie a solicitação inteira e elimine expressões genéricas como "elabore", "faça", "preciso" e "por favor" quando elas não forem essenciais. Priorize o tipo de documento e o assunto, por exemplo: "Memorando sobre licenças Revit", "Análise do RILC da SOPH" ou "Migração do sistema ERP". Use formato de frase: somente a primeira palavra começa com maiúscula, preservando siglas oficiais como SOPH, ETP, TR, RILC, SEI, TI, RH e IA. Responda somente com o título, sem aspas, ponto final, explicação ou markdown.'},
+      {role:'system',content:'Crie um título técnico, objetivo e específico que represente o assunto central da conversa. Use obrigatoriamente de 2 a 4 palavras e nunca ultrapasse quatro palavras. Não copie a solicitação inteira e elimine expressões genéricas como "elabore", "faça", "preciso" e "por favor". Priorize o tipo de documento e o assunto, por exemplo: "Memorando sobre licenças Revit", "Análise do RILC" ou "Migração do ERP". Use formato de frase: somente a primeira palavra começa com maiúscula, preservando siglas oficiais como SOPH, ETP, TR, RILC, SEI, TI, RH e IA. Responda somente com o título, sem aspas, ponto final, explicação ou markdown.'},
       {role:'user',content:`Resuma o assunto destas mensagens da conversa:\n${String(conversationContent).slice(0,4000)}`},
     ], 32)
     const clean = formatTitle(raw)
@@ -305,8 +305,9 @@ async function handler(context) {
     if (path === '/conversations' && method === 'GET') {
       const conversations = (await env.DB.prepare("SELECT c.id,c.title,c.created_at,c.updated_at,(SELECT content FROM chat_messages m WHERE m.conversation_id=c.id AND m.role='user' ORDER BY m.id LIMIT 1) first_prompt FROM conversations c WHERE c.user_id=? AND EXISTS(SELECT 1 FROM chat_messages m WHERE m.conversation_id=c.id) ORDER BY c.updated_at DESC").bind(user.id).all()).results
       for (const conversation of conversations) {
-        if (/^nova conversa$/i.test(conversation.title) && conversation.first_prompt) {
-          conversation.title = titleFor(conversation.first_prompt)
+        const correctedTitle = /^nova conversa$/i.test(conversation.title) && conversation.first_prompt ? titleFor(conversation.first_prompt) : formatTitle(conversation.title)
+        if (correctedTitle !== conversation.title) {
+          conversation.title = correctedTitle
           await env.DB.prepare('UPDATE conversations SET title=? WHERE id=?').bind(conversation.title, conversation.id).run()
         }
         delete conversation.first_prompt
@@ -323,6 +324,15 @@ async function handler(context) {
       if (!conversation) return fail('Conversa não encontrada.', 404)
       conversation.messages = (await env.DB.prepare('SELECT id,role,content,sources,attachment_ids,created_at FROM chat_messages WHERE conversation_id=? ORDER BY id').bind(conversation.id).all()).results.map(item => ({...item, sources: parseJson(item.sources), attachment_ids: parseJson(item.attachment_ids)}))
       return json(conversation)
+    }
+    if (match && method === 'PATCH') {
+      const id = Number(match[1])
+      const conversation = await env.DB.prepare('SELECT id FROM conversations WHERE id=? AND user_id=?').bind(id, user.id).first()
+      if (!conversation) return fail('Conversa não encontrada.', 404)
+      const title = formatTitle(body.title)
+      if (!title || /^nova conversa$/i.test(title)) return fail('Informe um nome válido para a conversa.')
+      await env.DB.prepare('UPDATE conversations SET title=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(title, id).run()
+      return json({id, title})
     }
     match = path.match(/^\/conversations\/(\d+)\/messages$/)
     if (match && method === 'POST') {
