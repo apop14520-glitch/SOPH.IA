@@ -43,15 +43,18 @@ async function verifyToken(env, token) {
 
 async function passwordHash(password, salt = crypto.randomUUID()) {
   const material = await crypto.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, ['deriveBits'])
-  const bits = await crypto.subtle.deriveBits({name: 'PBKDF2', hash: 'SHA-256', salt: encoder.encode(salt), iterations: 120000}, material, 256)
-  return `pbkdf2$120000$${salt}$${base64url(bits)}`
+  const iterations = 100000
+  const bits = await crypto.subtle.deriveBits({name: 'PBKDF2', hash: 'SHA-256', salt: encoder.encode(salt), iterations}, material, 256)
+  return `pbkdf2$${iterations}$${salt}$${base64url(bits)}`
 }
 
 async function passwordValid(password, stored) {
   const [kind, iterations, salt, expected] = String(stored || '').split('$')
   if (kind !== 'pbkdf2' || !salt || !expected) return false
   const material = await crypto.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, ['deriveBits'])
-  const bits = await crypto.subtle.deriveBits({name: 'PBKDF2', hash: 'SHA-256', salt: encoder.encode(salt), iterations: Number(iterations)}, material, 256)
+  const count = Number(iterations)
+  if (!Number.isInteger(count) || count < 1 || count > 100000) return false
+  const bits = await crypto.subtle.deriveBits({name: 'PBKDF2', hash: 'SHA-256', salt: encoder.encode(salt), iterations: count}, material, 256)
   return base64url(bits) === expected
 }
 
