@@ -89,6 +89,35 @@ const publicUser = user => ({...user, active: Boolean(user.active)})
 const titleFor = text => String(text).trim().replace(/\s+/g, ' ').slice(0, 68).replace(/^./u, c => c.toUpperCase())
 const parseJson = (value, fallback = []) => { try { return JSON.parse(value) } catch { return fallback } }
 
+function modelText(result) {
+  if (typeof result === 'string') return result.trim()
+  if (!result || typeof result !== 'object') return ''
+  const contentText = content => {
+    if (typeof content === 'string') return content
+    if (Array.isArray(content)) return content.map(part => typeof part === 'string' ? part : part?.text || part?.content || part?.output_text || '').filter(Boolean).join('\n')
+    return content?.text || content?.content || content?.output_text || ''
+  }
+  const candidates = [
+    result.response,
+    result.output_text,
+    result.generated_text,
+    result.text,
+    result.choices?.[0]?.message?.content,
+    result.choices?.[0]?.text,
+    result.result?.response,
+    result.result?.output_text,
+    result.result?.generated_text,
+    result.result?.choices?.[0]?.message?.content,
+    result.result?.choices?.[0]?.text,
+    result.output?.[0]?.content,
+  ]
+  for (const candidate of candidates) {
+    const text = contentText(candidate)
+    if (typeof text === 'string' && text.trim()) return text.trim()
+  }
+  return ''
+}
+
 async function conversationTitle(env, prompt) {
   const fallback = titleFor(prompt)
   try {
@@ -98,7 +127,7 @@ async function conversationTitle(env, prompt) {
       {role:'system',content:'Crie um título curto em português brasileiro que resuma o pedido do usuário. Use de 3 a 8 palavras, formato de frase, somente a primeira palavra em maiúscula, preservando siglas oficiais como SOPH, ETP, TR, RILC, SEI, TI, RH e IA. Responda somente com o título, sem aspas, ponto final, explicação ou markdown.'},
       {role:'user',content:String(prompt).slice(0,1800)},
     ],max_tokens:32,temperature:0.2})
-    const raw = typeof result === 'string' ? result : result?.response || result?.result?.response || ''
+    const raw = modelText(result)
     const clean = raw.replace(/<think>[\s\S]*?<\/think>/gi,'').replace(/^[#*\s"“”']+|[#*\s"“”'.:;!?]+$/g,'').replace(/\s+/g,' ').trim().slice(0,68)
     return clean.length >= 3 ? clean : fallback
   } catch { return fallback }
@@ -118,7 +147,7 @@ async function generateAnswer(env, prompt, history, attachments) {
   const saved = await env.DB.prepare("SELECT value FROM settings WHERE key='workers_ai_model'").first()
   const model = saved?.value || env.WORKERS_AI_MODEL || '@cf/qwen/qwen3-30b-a3b-fp8'
   const result = await env.AI.run(model, {messages, max_tokens: 6000, temperature: 0.35})
-  const answer = typeof result === 'string' ? result : result?.response || result?.result?.response
+  const answer = modelText(result)
   if (!answer?.trim()) throw new Error('O Workers AI retornou uma resposta vazia')
   return answer.trim()
 }
@@ -191,6 +220,17 @@ async function handler(context) {
       await env.DB.prepare('UPDATE conversations SET title=?, updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(generatedTitle, id).run()
       return json(await env.DB.prepare('SELECT * FROM chat_messages WHERE id=?').bind(inserted.meta.last_row_id).first(), 201)
     }
+    match = path.match(/^\/conversations\/(\d+)\/summarize$/)
+    if (match && method === 'POST') {
+      const id = Number(match[1])
+      const conversation = await env.DB.prepare('SELECT * FROM conversations WHERE id=? AND user_id=?').bind(id, user.id).first()
+      if (!conversation) return fail('Conversa não encontrada.', 404)
+      const firstMessage = await env.DB.prepare("SELECT content FROM chat_messages WHERE conversation_id=? AND role='user' ORDER BY id LIMIT 1").bind(id).first()
+      if (!firstMessage?.content) return fail('A conversa ainda não possui conteúdo para resumir.')
+      const title = await conversationTitle(env, firstMessage.content)
+      await env.DB.prepare('UPDATE conversations SET title=?, updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(title, id).run()
+      return json({id, title})
+    }
 
     if (path === '/knowledge' && method === 'GET') return json((await env.DB.prepare('SELECT id,title,category,filename,mime_type,created_at FROM knowledge ORDER BY id DESC').all()).results)
     if (path === '/knowledge/upload' && method === 'POST') {
@@ -256,8 +296,8 @@ async function handler(context) {
     if (path === '/admin/ai/test' && method === 'POST') {
       if (!['admin','gerente'].includes(user.role)) return fail('Acesso restrito.', 403)
       const selectedModel = String(body.model || env.WORKERS_AI_MODEL || '@cf/qwen/qwen3-30b-a3b-fp8')
-      const result = await env.AI.run(selectedModel, {prompt: 'Responda somente: conexão ativa.'})
-      if (!result) return fail('O Workers AI retornou uma resposta vazia.', 422)
+      const result = await env.AI.run(selectedModel, {messages:[{role:'user',content:'Responda somente: conexão ativa.'}],max_tokens:64,temperature:0.1})
+      if (!modelText(result)) return fail('O Workers AI retornou uma resposta vazia.', 422)
       return json({message: 'Conexão com o Cloudflare Workers AI confirmada.'})
     }
     if (path === '/admin/ai' && method === 'PUT') {
