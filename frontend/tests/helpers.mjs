@@ -1,11 +1,20 @@
 // Auxiliares para testar o Worker com um D1 simulado em memória e login real.
 // Usado pelos testes em frontend/tests e pela medição das respostas da avaliação.
+import {randomBytes} from 'node:crypto'
+
 export const {onRequest} = await import(new URL('../functions/api/[[path]].js', import.meta.url).href)
 
+// Senhas de teste geradas a cada execução: nenhuma senha fica escrita no repositório.
+const senhaAleatoria = () => `${randomBytes(12).toString('base64url')}Aa1!`
+const SENHA_SERVIDOR = senhaAleatoria()
+const SENHA_GERENTE = senhaAleatoria()
+const SENHA_SEGUNDO_ADMIN = senhaAleatoria()
+const SENHA_ADMIN = senhaAleatoria()
+
 export const SECRET_KEY = 'chave-de-teste-com-mais-de-32-caracteres'
-export const ADMIN = ['admin@soph.ro.gov.br', 'Admin@1234']
-export const SEGUNDO_ADMIN = ['segundo@soph.ro.gov.br', 'Segundo@1234']
-export const GERENTE = ['gerente@soph.ro.gov.br', 'Gerente@1234']
+export const ADMIN = ['admin@soph.ro.gov.br', SENHA_ADMIN]
+export const SEGUNDO_ADMIN = ['segundo@soph.ro.gov.br', SENHA_SEGUNDO_ADMIN]
+export const GERENTE = ['gerente@soph.ro.gov.br', SENHA_GERENTE]
 
 const encoder = new TextEncoder()
 
@@ -24,10 +33,10 @@ export async function passwordHash(password, salt = 'salt-de-teste-0001') {
 
 export async function seedUsers() {
   return [
-    {id: 1, name: 'Administrador', email: 'admin@soph.ro.gov.br', role: 'admin', active: 1, sector_id: 1, password_hash: await passwordHash('Admin@1234')},
-    {id: 2, name: 'Segundo Admin', email: 'segundo@soph.ro.gov.br', role: 'admin', active: 1, sector_id: 1, password_hash: await passwordHash('Segundo@1234')},
-    {id: 3, name: 'Servidor', email: 'servidor@soph.ro.gov.br', role: 'padrao', active: 1, sector_id: 1, password_hash: await passwordHash('Servidor@1234')},
-    {id: 4, name: 'Gerente de TI', email: 'gerente@soph.ro.gov.br', role: 'gerente', active: 1, sector_id: 1, password_hash: await passwordHash('Gerente@1234')},
+    {id: 1, name: 'Administrador', email: 'admin@soph.ro.gov.br', role: 'admin', active: 1, sector_id: 1, password_hash: await passwordHash(SENHA_ADMIN)},
+    {id: 2, name: 'Segundo Admin', email: 'segundo@soph.ro.gov.br', role: 'admin', active: 1, sector_id: 1, password_hash: await passwordHash(SENHA_SEGUNDO_ADMIN)},
+    {id: 3, name: 'Servidor', email: 'servidor@soph.ro.gov.br', role: 'padrao', active: 1, sector_id: 1, password_hash: await passwordHash(SENHA_SERVIDOR)},
+    {id: 4, name: 'Gerente de TI', email: 'gerente@soph.ro.gov.br', role: 'gerente', active: 1, sector_id: 1, password_hash: await passwordHash(SENHA_GERENTE)},
   ]
 }
 
