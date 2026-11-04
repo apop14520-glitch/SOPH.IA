@@ -45,6 +45,7 @@ export function createDb(initialUsers) {
   const users = initialUsers.map(user => ({...user}))
   const sectors = [{id: 1, name: 'Tecnologia da Informação'}]
   const loginAttempts = new Map()
+  const passwordResets = []
   const conversations = []
   const chatMessages = []
   let nextId = Math.max(...users.map(user => user.id)) + 1
@@ -55,6 +56,10 @@ export function createDb(initialUsers) {
     if (/WHERE u\.id=\? AND u\.active=1/.test(sql)) {
       const user = users.find(item => item.id === args[0] && item.active)
       return user ? {...user, sector_name: null} : null
+    }
+    if (/^SELECT id,email,active FROM users WHERE lower\(email\)=lower\(\?\)$/.test(sql)) {
+      const user = users.find(item => item.email === String(args[0]).toLowerCase())
+      return user ? {id: user.id, email: user.email, active: user.active} : null
     }
     if (/WHERE lower\(u\.email\)=lower\(\?\)/.test(sql)) {
       const user = users.find(item => item.email === String(args[0]).toLowerCase())
@@ -74,6 +79,10 @@ export function createDb(initialUsers) {
     if (/FROM login_attempts WHERE key=\?/.test(sql)) {
       const row = loginAttempts.get(args[0])
       return row ? {...row} : null
+    }
+    if (/^SELECT id,user_id FROM password_resets WHERE token_hash=\? AND used_at IS NULL AND expires_at>\?$/.test(sql)) {
+      const row = passwordResets.find(item => item.token_hash === args[0] && item.used_at === null && item.expires_at > args[1])
+      return row ? {id: row.id, user_id: row.user_id} : null
     }
     if (/FROM settings WHERE key=\?/.test(sql)) return null
     if (/^SELECT \* FROM conversations WHERE id=\? AND user_id=\?$/.test(sql)) {
@@ -124,6 +133,16 @@ export function createDb(initialUsers) {
       chatMessages.push(row)
       return {meta: {last_row_id: row.id, changes: 1}}
     }
+    if (/^INSERT INTO password_resets/.test(sql)) {
+      const [user_id, token_hash, expires_at] = args
+      passwordResets.push({id: passwordResets.length + 1, user_id, token_hash, expires_at, used_at: null})
+      return {meta: {changes: 1, last_row_id: passwordResets.length}}
+    }
+    if (/^UPDATE password_resets SET used_at=\? WHERE user_id=\? AND used_at IS NULL$/.test(sql)) {
+      let changes = 0
+      for (const row of passwordResets) if (row.user_id === args[1] && row.used_at === null) { row.used_at = args[0]; changes += 1 }
+      return {meta: {changes}}
+    }
     const renamed = sql.match(/^UPDATE conversations SET title=\?(?:,updated_at=CURRENT_TIMESTAMP)? WHERE id=\?$/)
     if (renamed) {
       const conversation = conversations.find(item => item.id === args[1])
@@ -136,6 +155,7 @@ export function createDb(initialUsers) {
   return {
     users,
     conversations,
+    passwordResets,
     chatMessages,
     prepare(sql) {
       return {
