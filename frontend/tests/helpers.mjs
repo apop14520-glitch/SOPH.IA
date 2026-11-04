@@ -155,7 +155,8 @@ export function createDb(initialUsers) {
     }
     if (/^INSERT INTO chat_messages/.test(sql)) {
       const role = sql.includes("'assistant'") ? 'assistant' : 'user'
-      const row = {id: nextMessageId++, conversation_id: args[0], role, content: args[1], sources: '[]'}
+      const row = {id: Math.max(nextMessageId - 1, ...chatMessages.map(item => item.id)) + 1, conversation_id: args[0], role, content: args[1], sources: '[]'}
+      nextMessageId = row.id + 1
       chatMessages.push(row)
       return {meta: {last_row_id: row.id, changes: 1}}
     }
@@ -207,6 +208,13 @@ export function createDb(initialUsers) {
             return {results: knowledge
               .filter(item => item.category !== this.args[0] && item.content === '' && item.storage_key != null)
               .map(({id, filename, mime_type, storage_key}) => ({id, filename, mime_type, storage_key}))}
+          }
+          if (/SELECT role,content FROM chat_messages WHERE conversation_id=\?/.test(this.sql)) {
+            return {results: chatMessages
+              .filter(item => item.conversation_id === this.args[0])
+              .sort((a, b) => b.id - a.id)
+              .slice(0, 13)
+              .map(({role, content}) => ({role, content}))}
           }
           return {results: []}
         },
