@@ -146,14 +146,83 @@ const RESET_TTL_SECONDS = 30 * 60
 const RESET_LIMITS = {email: 5, ip: 20}
 const sha256Hex = async value => [...new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(value)))].map(byte => byte.toString(16).padStart(2, '0')).join('')
 const randomResetToken = () => base64url(crypto.getRandomValues(new Uint8Array(32)))
-const mailConfigured = env => Boolean(env.SEND_EMAIL || (env.RESEND_API_KEY && env.MAIL_FROM))
-// Envio pelo Resend (https://resend.com). Testes usam env.SEND_EMAIL no lugar.
+const mailConfigured = env => Boolean(env.SEND_EMAIL || (env.SMTP_USER && env.SMTP_PASS && env.MAIL_FROM) || (env.RESEND_API_KEY && env.MAIL_FROM))
+// Envio do link de redefinição. Ordem: SMTP (Gmail com senha de app), depois Resend. Testes usam env.SEND_EMAIL.
+const base64Utf8 = text => btoa(String.fromCharCode(...new TextEncoder().encode(text)))
+const smtpBase64Lines = text => base64Utf8(text).match(/.{1,76}/g).join('\r\n')
+// Conversa SMTP: lê respostas completas (inclusive as de várias linhas, "250-...") e envia comandos.
+function smtpSession(socket) {
+  const reader = socket.readable.getReader()
+  const writer = socket.writable.getWriter()
+  const decoder = new TextDecoder()
+  const encoder = new TextEncoder()
+  let buffer = ''
+  const reply = async () => {
+    for (;;) {
+      const lines = buffer.split('\r\n')
+      for (let i = 0; i < lines.length - 1; i++) {
+        if (/^\d{3} /.test(lines[i])) {
+          const text = lines.slice(0, i + 1).join('\n')
+          buffer = lines.slice(i + 1).join('\r\n')
+          return text
+        }
+      }
+      const {value, done} = await reader.read()
+      if (done) throw new Error('conexão SMTP encerrada pelo servidor')
+      buffer += decoder.decode(value, {stream: true})
+    }
+  }
+  return {
+    reply,
+    send: data => writer.write(encoder.encode(data)),
+    command: async line => { await writer.write(encoder.encode(`${line}\r\n`)); return reply() },
+    close: async () => { try { await writer.close() } catch {} },
+  }
+}
+// Gmail (smtp.gmail.com, porta 465) com senha de app. Sem dependências: usa o conector TCP do Workers.
+async function sendSmtpMail(env, to, subject, html) {
+  const connect = env.SMTP_CONNECT || (await import('cloudflare:sockets')).connect
+  const socket = connect({hostname: env.SMTP_HOST || 'smtp.gmail.com', port: Number(env.SMTP_PORT || 465)}, {secureTransport: 'on', allowHalfOpen: false})
+  const smtp = smtpSession(socket)
+  const expect = (text, code) => { if (!String(text).startsWith(code)) throw new Error(`SMTP recusou: ${String(text).slice(0, 80)}`) }
+  try {
+    expect(await smtp.reply(), '220')
+    expect(await smtp.command('EHLO soph.ro.gov.br'), '250')
+    expect(await smtp.command(`AUTH PLAIN ${btoa(`\u0000${env.SMTP_USER}\u0000${env.SMTP_PASS}`)}`), '235')
+    const sender = (String(env.MAIL_FROM).match(/<([^>]+)>/) || [])[1] || env.MAIL_FROM
+    expect(await smtp.command(`MAIL FROM:<${sender}>`), '250')
+    expect(await smtp.command(`RCPT TO:<${to}>`), '250')
+    expect(await smtp.command('DATA'), '354')
+    const message = [
+      `From: ${env.MAIL_FROM}`,
+      `To: ${to}`,
+      `Subject: =?UTF-8?B?${base64Utf8(subject)}?=`,
+      `Date: ${new Date().toUTCString()}`,
+      `Message-ID: <${crypto.randomUUID()}@${sender.split('@')[1] || 'soph.ro.gov.br'}>`,
+      'MIME-Version: 1.0',
+      'Content-Type: text/html; charset=UTF-8',
+      'Content-Transfer-Encoding: base64',
+      '',
+      smtpBase64Lines(html),
+      '.',
+      '',
+    ].join('\r\n')
+    await smtp.send(message)
+    expect(await smtp.reply(), '250')
+    await smtp.command('QUIT').catch(() => {})
+  } finally {
+    await smtp.close()
+  }
+}
 async function sendResetEmail(env, to, link) {
   if (env.SEND_EMAIL) return env.SEND_EMAIL(to, link)
+  const subject = 'Redefinição de senha da SOPH.IA'
+  const html = `<p>Recebemos um pedido para redefinir a senha da sua conta na SOPH.IA.</p><p><a href="${link}">Criar nova senha</a></p><p>O link vale por 30 minutos e só pode ser usado uma vez. Se você não fez esse pedido, ignore este e-mail.</p>`
+  if (env.SMTP_USER && env.SMTP_PASS) return sendSmtpMail(env, to, subject, html)
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {authorization: `Bearer ${env.RESEND_API_KEY}`, 'content-type': 'application/json'},
-    body: JSON.stringify({from: env.MAIL_FROM, to: [to], subject: 'Redefinição de senha da SOPH.IA', html: `<p>Recebemos um pedido para redefinir a senha da sua conta na SOPH.IA.</p><p><a href="${link}">Criar nova senha</a></p><p>O link vale por 30 minutos e só pode ser usado uma vez. Se você não fez esse pedido, ignore este e-mail.</p>`}),
+    body: JSON.stringify({from: env.MAIL_FROM, to: [to], subject, html}),
   })
   if (!res.ok) throw new Error(`envio recusado (${res.status})`)
 }

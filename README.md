@@ -49,6 +49,11 @@ No mesmo account utilizado pelo projeto Pages:
    - `SEED_ADMIN_PASSWORD`: senha forte inicial;
    - `TAVILY_API_KEY`: chave da Tavily para pesquisa controlada na web. Não
      coloque esse valor no GitHub, no frontend ou em arquivos versionados.
+   - Recuperação de senha por e-mail (Gmail com senha de app): `SMTP_USER`
+     (endereço do Gmail), `SMTP_PASS` (senha de app de 16 caracteres) e, como
+     variável comum, `MAIL_FROM` (por exemplo `SOPH.IA <endereco@gmail.com>`).
+     Sem essas três variáveis, o botão "Esqueci a senha" responde que o envio
+     não está configurado.
 5. Opcionalmente, adicione `WORKERS_AI_MODEL` com o valor
    `@cf/qwen/qwen3-30b-a3b-fp8`. O administrador também pode escolher entre
    Qwen3 e GLM pela tela de Inteligência Artificial depois do primeiro acesso.
@@ -127,7 +132,7 @@ for reconhecido, consulte a documentação do Cloudflare para essa versão.
 ## Testes
 
 ```bash
-node --test frontend/tests/permissions.test.mjs frontend/tests/postprocess.test.mjs evals/checks.test.mjs
+node --test frontend/tests/*.test.mjs evals/checks.test.mjs
 cd frontend && npm run build
 ```
 
@@ -154,9 +159,10 @@ evals/          conjunto de avaliação das respostas da IA
 
 ## Limitações conhecidas
 
-- O token de sessão fica no `localStorage` do navegador, o que é aceitável
-  apenas para o MVP.
-- Não há recuperação de senha por e-mail. O administrador redefine a senha.
+- A sessão fica em cookie HttpOnly, mas o acesso ainda depende de um token
+  com validade de 8 horas; não há renovação automática.
+- A recuperação de senha por e-mail só funciona com `SMTP_USER`, `SMTP_PASS` e
+  `MAIL_FROM` configurados. Sem isso, o administrador redefine a senha.
 - Não há exportação para DOCX na versão do Cloudflare.
 - Não há assinatura digital, tramitação nem integração com o SEI.
 - As fontes de exemplo não substituem normativos oficiais atualizados.
