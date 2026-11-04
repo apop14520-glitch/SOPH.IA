@@ -115,6 +115,7 @@ async function ensureSchema(env) {
     env.DB.prepare("CREATE TABLE IF NOT EXISTS knowledge (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, category TEXT NOT NULL, filename TEXT NOT NULL, mime_type TEXT, storage_key TEXT, content TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS login_attempts (key TEXT PRIMARY KEY, failures INTEGER NOT NULL DEFAULT 0, window_start INTEGER NOT NULL DEFAULT 0, locked_until INTEGER NOT NULL DEFAULT 0)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS password_resets (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, token_hash TEXT NOT NULL UNIQUE, expires_at INTEGER NOT NULL, used_at INTEGER)")
   ])
   const sectors = [['Tecnologia da Informação','TI'],['Presidência','PRES'],['Diretoria Administrativa e Financeira','DAF'],['Diretoria Técnica e Operacional','DTO'],['Assessoria Jurídica','ASJUR'],['Recursos Humanos','RH'],['Licitações e Contratos','LIC'],['Outro','OUTRO']]
   await env.DB.batch(sectors.map(([name, acronym]) => env.DB.prepare('INSERT OR IGNORE INTO sectors(name, acronym) VALUES(?, ?)').bind(name, acronym)))
@@ -139,6 +140,22 @@ function tokenFromRequest(request) {
   if (bearer) return bearer
   const match = (request.headers.get('cookie') || '').match(new RegExp(`(?:^|;\\s*)${SESSION_COOKIE}=([^;]+)`))
   return match ? match[1] : null
+}
+
+const RESET_TTL_SECONDS = 30 * 60
+const RESET_LIMITS = {email: 5, ip: 20}
+const sha256Hex = async value => [...new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(value)))].map(byte => byte.toString(16).padStart(2, '0')).join('')
+const randomResetToken = () => base64url(crypto.getRandomValues(new Uint8Array(32)))
+const mailConfigured = env => Boolean(env.SEND_EMAIL || (env.RESEND_API_KEY && env.MAIL_FROM))
+// Envio pelo Resend (https://resend.com). Testes usam env.SEND_EMAIL no lugar.
+async function sendResetEmail(env, to, link) {
+  if (env.SEND_EMAIL) return env.SEND_EMAIL(to, link)
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {authorization: `Bearer ${env.RESEND_API_KEY}`, 'content-type': 'application/json'},
+    body: JSON.stringify({from: env.MAIL_FROM, to: [to], subject: 'Redefinição de senha da SOPH.IA', html: `<p>Recebemos um pedido para redefinir a senha da sua conta na SOPH.IA.</p><p><a href="${link}">Criar nova senha</a></p><p>O link vale por 30 minutos e só pode ser usado uma vez. Se você não fez esse pedido, ignore este e-mail.</p>`}),
+  })
+  if (!res.ok) throw new Error(`envio recusado (${res.status})`)
 }
 
 async function currentUser(request, env) {
@@ -547,6 +564,36 @@ async function handler(context) {
     const body = ['POST','PUT','PATCH'].includes(method) && contentType.includes('application/json') ? await request.json().catch(() => ({})) : {}
 
     if (path === '/health') return json({status: 'ok', platform: 'cloudflare-pages', ai: Boolean(env.AI), database: Boolean(env.DB)})
+    if (path === '/auth/forgot' && method === 'POST') {
+      const email = String(body.email || '').trim().toLowerCase()
+      const emailKey = `reset-email:${email}`
+      const ipKey = `reset-ip:${request.headers.get('cf-connecting-ip') || 'desconhecido'}`
+      const now = Math.floor(Date.now() / 1000)
+      if (await loginBlockedUntil(env, [emailKey, ipKey], now)) return fail('Muitos pedidos. Aguarde alguns minutos e tente novamente.', 429)
+      await recordLoginFailure(env, emailKey, RESET_LIMITS.email, now)
+      await recordLoginFailure(env, ipKey, RESET_LIMITS.ip, now)
+      if (!mailConfigured(env)) return fail('O envio de e-mail não está configurado. Procure um administrador da SOPH.IA.', 503)
+      // Mesma resposta exista ou não o e-mail: não revela quem tem conta.
+      const generic = json({message: 'Se o e-mail estiver cadastrado e ativo, você receberá um link para criar uma nova senha.'})
+      const user = await env.DB.prepare('SELECT id,email,active FROM users WHERE lower(email)=lower(?)').bind(email).first()
+      if (!user || !user.active) return generic
+      await env.DB.prepare('UPDATE password_resets SET used_at=? WHERE user_id=? AND used_at IS NULL').bind(now, user.id).run()
+      const token = randomResetToken()
+      await env.DB.prepare('INSERT INTO password_resets(user_id,token_hash,expires_at) VALUES(?,?,?)').bind(user.id, await sha256Hex(token), now + RESET_TTL_SECONDS).run()
+      const origin = env.PUBLIC_URL || new URL(request.url).origin
+      try { await sendResetEmail(env, user.email, `${origin}/#/redefinir?token=${token}`) }
+      catch (error) { console.error('falha ao enviar redefinição de senha:', String(error.message).slice(0, 120)) }
+      return generic
+    }
+    if (path === '/auth/reset' && method === 'POST') {
+      const now = Math.floor(Date.now() / 1000)
+      const row = await env.DB.prepare('SELECT id,user_id FROM password_resets WHERE token_hash=? AND used_at IS NULL AND expires_at>?').bind(await sha256Hex(String(body.token || '')), now).first()
+      if (!row) return fail('Link inválido ou expirado. Solicite um novo.', 400)
+      if (!strongPassword(body.password)) return fail(PASSWORD_RULE)
+      await env.DB.prepare('UPDATE users SET password_hash=? WHERE id=?').bind(await passwordHash(body.password), row.user_id).run()
+      await env.DB.prepare('UPDATE password_resets SET used_at=? WHERE user_id=? AND used_at IS NULL').bind(now, row.user_id).run()
+      return json({message: 'Senha alterada. Entre com a nova senha.'})
+    }
     if (path === '/auth/logout' && method === 'POST') return json({ok: true}, 200, {'set-cookie': sessionCookie('', 0)})
     if (path === '/auth/login' && method === 'POST') {
       const emailKey = `email:${String(body.email || '').trim().toLowerCase()}`
