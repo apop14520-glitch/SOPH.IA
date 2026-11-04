@@ -3,7 +3,8 @@
 
 export const MIN_WORDS = {etp: 300, tr: 300, despacho: 40, memorando: 40, revisao: 40, pergunta: 15}
 
-const PLACEHOLDER = /\[[^\]\n]{0,120}\]|informacao a completar|a completar\b/
+// "a completar" só conta como marcador quando é a expressão isolada, não parte de "deverá completar" (sem acento: "devera completar").
+const PLACEHOLDER = /\[[^\]\n]{0,120}\]|informacao a completar|(?<![a-z])a completar\b/
 const INTERNAL_SECTION = /^[#*\s]*(observacao|observacoes|validacao necessaria|criterio de resposta|nota do assistente|analise interna)\b/m
 const AI_META = /\b(sou (uma|um) (ia|inteligencia artificial)|como (uma )?(ia|inteligencia artificial|modelo de linguagem)|modelo de linguagem|gerad[oa] por (ia|inteligencia artificial))\b/
 const SEI_FIELDS = /(local e data|nome d[oa] (autoridade|responsavel|servidor)|\bcargo\s*:|n[ºo°]\s*\d+\s*\/\s*\d{4})/

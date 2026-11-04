@@ -22,6 +22,12 @@ test('reprova colchetes e "informação a completar"', () => {
   assert.ok(result.failures.some(item => item.startsWith('placeholder')))
 })
 
+test('não confunde "deverá completar" com o marcador "a completar"', () => {
+  const text = SAFE_ETP + '\n\nA unidade demandante deverá completar os dados pendentes do local.'
+  const result = checkResponse(byId('etp-01'), text)
+  assert.ok(!result.failures.some(item => item.startsWith('placeholder')), result.failures.join(' | '))
+})
+
 test('reprova título inteiro em caixa alta', () => {
   const text = SAFE_ETP + '\n\n1. IDENTIFICAÇÃO DA DEMANDA\n\nTexto.'
   const result = checkResponse(byId('etp-01'), text)
