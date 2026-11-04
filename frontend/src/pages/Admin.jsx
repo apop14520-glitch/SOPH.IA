@@ -3,7 +3,6 @@ import {Alert,Avatar,Box,Button,Card,Chip,CircularProgress,Dialog,DialogActions,
 import {Add,AutoAwesome,BlockOutlined,CheckCircle,CloudDownload,CloudUpload,DeleteOutline,Description,GroupOutlined,Key,OpenInNew,Person,PsychologyOutlined,SettingsSuggestOutlined,StorageOutlined,ThumbUpOutlined,Visibility,VisibilityOff} from '@mui/icons-material'
 import {api,asArray,errorMessage} from '../api'
 
-const sectors=['Presidência','Diretoria Administrativa e Financeira','Diretoria Técnica','Tecnologia da Informação','Recursos Humanos','Licitações e Contratos','Jurídico','Outro']
 const roles={padrao:'Padrão',diretor:'Diretor',gerente:'Gerente de TI',admin:'Administrador'}
 const validPassword=value=>value.length>=8&&/[A-Z]/.test(value)&&/[a-z]/.test(value)&&/\d/.test(value)&&/[^A-Za-z0-9]/.test(value)
 const modelTypes=['RILC SOPH','Modelo de ETP','Modelo de Termo de Referência','Modelo de Despacho','Modelo de Memorando','Lei ou Regulamento','Manual Institucional','Outro Modelo']

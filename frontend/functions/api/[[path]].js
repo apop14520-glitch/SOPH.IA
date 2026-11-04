@@ -1,4 +1,6 @@
 const encoder = new TextEncoder()
+// Anexos enviados pelo chat são privados de quem os enviou e nunca entram na base institucional.
+const ATTACHMENT_CATEGORY = 'anexo de conversa'
 
 const json = (data, status = 200, extra = {}) => new Response(JSON.stringify(data), {
   status,
@@ -70,6 +72,9 @@ async function ensureSchema(env) {
   ])
   const sectors = [['Tecnologia da Informação','TI'],['Presidência','PRES'],['Diretoria Administrativa e Financeira','DAF'],['Diretoria Técnica e Operacional','DTO'],['Assessoria Jurídica','ASJUR'],['Recursos Humanos','RH'],['Licitações e Contratos','LIC'],['Outro','OUTRO']]
   await env.DB.batch(sectors.map(([name, acronym]) => env.DB.prepare('INSERT OR IGNORE INTO sectors(name, acronym) VALUES(?, ?)').bind(name, acronym)))
+  // Registra o dono de cada documento. Em bancos já existentes a coluna é criada uma vez;
+  // se ela já existir, o erro esperado é ignorado.
+  await env.DB.prepare('ALTER TABLE knowledge ADD COLUMN owner_id INTEGER').run().catch(() => {})
   const count = await env.DB.prepare('SELECT COUNT(*) count FROM users').first()
   if (!count?.count && env.SEED_ADMIN_EMAIL && env.SEED_ADMIN_PASSWORD) {
     const sector = await env.DB.prepare("SELECT id FROM sectors WHERE acronym='TI'").first()
@@ -347,7 +352,7 @@ async function extractDocument(env, document) {
 
 async function institutionalReferences(env, prompt, attachments = []) {
   const excluded = new Set(attachments.map(item => Number(item.id)))
-  const documents = (await env.DB.prepare('SELECT id,title,category,filename,mime_type,storage_key,content FROM knowledge ORDER BY id DESC LIMIT 60').all()).results.filter(item => !excluded.has(Number(item.id)))
+  const documents = (await env.DB.prepare('SELECT id,title,category,filename,mime_type,storage_key,content FROM knowledge WHERE category != ? ORDER BY id DESC LIMIT 60').bind(ATTACHMENT_CATEGORY).all()).results.filter(item => !excluded.has(Number(item.id)))
   const words = searchWords(prompt)
   const scored = documents.map(item => {
     const heading = `${item.title} ${item.category} ${item.filename}`.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -477,7 +482,7 @@ async function handler(context) {
       let attachments = []
       if (attachmentIds.length) {
         const placeholders = attachmentIds.map(() => '?').join(',')
-        attachments = (await env.DB.prepare(`SELECT id,title,category,content FROM knowledge WHERE id IN (${placeholders})`).bind(...attachmentIds).all()).results
+        attachments = (await env.DB.prepare(`SELECT id,title,category,content FROM knowledge WHERE owner_id = ? AND id IN (${placeholders})`).bind(user.id, ...attachmentIds).all()).results
       }
       const institutional = await institutionalReferences(env, prompt, attachments)
       const automaticWeb = /\b(pesquis\w*|busque na (internet|web)|na internet|na web|legisla\w+ vigente|jurisprud\w+|cotação|preço atual)\b/i.test(prompt)
@@ -502,7 +507,7 @@ async function handler(context) {
       return json({id, title})
     }
 
-    if (path === '/knowledge' && method === 'GET') return json((await env.DB.prepare('SELECT id,title,category,filename,mime_type,created_at FROM knowledge ORDER BY id DESC').all()).results)
+    if (path === '/knowledge' && method === 'GET') return json((await env.DB.prepare('SELECT id,title,category,filename,mime_type,created_at FROM knowledge WHERE category != ? ORDER BY id DESC').bind(ATTACHMENT_CATEGORY).all()).results)
     if (path === '/knowledge/upload' && method === 'POST') {
       const form = await request.formData()
       const file = form.get('file')
@@ -520,14 +525,18 @@ async function handler(context) {
       }
       if (!content && /\.(pdf|docx)$/i.test(file.name)) return fail('Não foi possível extrair o texto deste documento. Verifique se o PDF não está protegido ou corrompido e tente novamente.', 422)
       if (env.DOCUMENTS) await env.DOCUMENTS.put(key, file.stream(), {httpMetadata: {contentType: file.type}})
-      const result = await env.DB.prepare('INSERT INTO knowledge(title,category,filename,mime_type,storage_key,content) VALUES(?,?,?,?,?,?)')
-        .bind(form.get('title') || file.name, form.get('category') || 'Documento', file.name, file.type || 'application/octet-stream', env.DOCUMENTS ? key : null, content).run()
+      // Somente administradores publicam na base institucional; demais usuários enviam anexos privados.
+      const category = user.role === 'admin' ? (String(form.get('category') || '').trim() || 'Documento') : ATTACHMENT_CATEGORY
+      const result = await env.DB.prepare('INSERT INTO knowledge(title,category,filename,mime_type,storage_key,content,owner_id) VALUES(?,?,?,?,?,?,?)')
+        .bind(form.get('title') || file.name, category, file.name, file.type || 'application/octet-stream', env.DOCUMENTS ? key : null, content, user.id).run()
       return json(await env.DB.prepare('SELECT id,title,category,filename,mime_type,created_at FROM knowledge WHERE id=?').bind(result.meta.last_row_id).first(), 201)
     }
     match = path.match(/^\/knowledge\/(\d+)\/file$/)
     if (match && method === 'GET') {
       const item = await env.DB.prepare('SELECT * FROM knowledge WHERE id=?').bind(Number(match[1])).first()
       if (!item) return fail('Documento não encontrado.', 404)
+      // Anexo privado só pode ser baixado por quem o enviou ou por administradores.
+      if (item.category === ATTACHMENT_CATEGORY && item.owner_id !== user.id && user.role !== 'admin') return fail('Documento não encontrado.', 404)
       if (item.storage_key && env.DOCUMENTS) {
         const object = await env.DOCUMENTS.get(item.storage_key)
         if (object) return new Response(object.body, {headers: {'content-type': item.mime_type || 'application/octet-stream', 'content-disposition': `inline; filename="${item.filename.replace(/"/g, '')}"`}})
