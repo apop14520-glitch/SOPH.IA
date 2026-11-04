@@ -9,6 +9,28 @@ const strongPassword = value => {
   const text = String(value || '')
   return text.length >= 8 && /[A-Z]/.test(text) && /[a-z]/.test(text) && /\d/.test(text) && /[^A-Za-z0-9]/.test(text)
 }
+// Limite de tentativas de login: por conta (e-mail) e por origem (IP). Um bloqueio vale para qualquer origem,
+// e a resposta é a mesma para e-mails existentes e inexistentes, para não revelar contas cadastradas.
+const LOGIN_WINDOW_SECONDS = 15 * 60
+const LOGIN_LIMITS = {email: 5, ip: 50}
+async function loginBlockedUntil(env, keys, now) {
+  let until = 0
+  for (const key of keys) {
+    const row = await env.DB.prepare('SELECT locked_until FROM login_attempts WHERE key=?').bind(key).first()
+    if (row && row.locked_until > now) until = Math.max(until, row.locked_until)
+  }
+  return until
+}
+async function recordLoginFailure(env, key, limit, now) {
+  const row = await env.DB.prepare('SELECT failures,window_start FROM login_attempts WHERE key=?').bind(key).first()
+  const inWindow = Boolean(row) && now - row.window_start < LOGIN_WINDOW_SECONDS
+  const failures = inWindow ? row.failures + 1 : 1
+  const windowStart = inWindow ? row.window_start : now
+  const lockedUntil = failures >= limit ? now + LOGIN_WINDOW_SECONDS : 0
+  await env.DB.prepare('INSERT INTO login_attempts(key,failures,window_start,locked_until) VALUES(?,?,?,?) ON CONFLICT(key) DO UPDATE SET failures=excluded.failures, window_start=excluded.window_start, locked_until=excluded.locked_until')
+    .bind(key, failures, windowStart, lockedUntil).run()
+}
+
 // Carrega a conta alvo. Gerentes não alteram contas administrativas; só administradores podem.
 async function loadManagedUser(env, actor, targetId) {
   const row = await env.DB.prepare('SELECT id,role,active FROM users WHERE id=?').bind(targetId).first()
@@ -92,6 +114,7 @@ async function ensureSchema(env) {
     env.DB.prepare("CREATE TABLE IF NOT EXISTS chat_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE, role TEXT NOT NULL, content TEXT NOT NULL, sources TEXT NOT NULL DEFAULT '[]', attachment_ids TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS knowledge (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, category TEXT NOT NULL, filename TEXT NOT NULL, mime_type TEXT, storage_key TEXT, content TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS login_attempts (key TEXT PRIMARY KEY, failures INTEGER NOT NULL DEFAULT 0, window_start INTEGER NOT NULL DEFAULT 0, locked_until INTEGER NOT NULL DEFAULT 0)"),
   ])
   const sectors = [['Tecnologia da Informação','TI'],['Presidência','PRES'],['Diretoria Administrativa e Financeira','DAF'],['Diretoria Técnica e Operacional','DTO'],['Assessoria Jurídica','ASJUR'],['Recursos Humanos','RH'],['Licitações e Contratos','LIC'],['Outro','OUTRO']]
   await env.DB.batch(sectors.map(([name, acronym]) => env.DB.prepare('INSERT OR IGNORE INTO sectors(name, acronym) VALUES(?, ?)').bind(name, acronym)))
@@ -432,8 +455,17 @@ async function handler(context) {
 
     if (path === '/health') return json({status: 'ok', platform: 'cloudflare-pages', ai: Boolean(env.AI), database: Boolean(env.DB)})
     if (path === '/auth/login' && method === 'POST') {
+      const emailKey = `email:${String(body.email || '').trim().toLowerCase()}`
+      const ipKey = `ip:${request.headers.get('cf-connecting-ip') || 'desconhecido'}`
+      const now = Math.floor(Date.now() / 1000)
+      if (await loginBlockedUntil(env, [emailKey, ipKey], now)) return fail('Muitas tentativas de acesso. Aguarde alguns minutos e tente novamente.', 429)
       const user = await env.DB.prepare('SELECT u.*,s.name sector_name FROM users u LEFT JOIN sectors s ON s.id=u.sector_id WHERE lower(u.email)=lower(?)').bind(body.email || '').first()
-      if (!user || !user.active || !await passwordValid(body.password || '', user.password_hash)) return fail('E-mail ou senha inválidos.', 401)
+      if (!user || !user.active || !await passwordValid(body.password || '', user.password_hash)) {
+        await recordLoginFailure(env, emailKey, LOGIN_LIMITS.email, now)
+        await recordLoginFailure(env, ipKey, LOGIN_LIMITS.ip, now)
+        return fail('E-mail ou senha inválidos.', 401)
+      }
+      await env.DB.prepare('DELETE FROM login_attempts WHERE key=?').bind(emailKey).run()
       const {password_hash: _hash, ...safeUser} = user
       return json({access_token: await createToken(env, user), token_type: 'bearer', user: publicUser(safeUser)})
     }
