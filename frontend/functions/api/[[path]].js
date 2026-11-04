@@ -1,6 +1,29 @@
 const encoder = new TextEncoder()
 // Anexos enviados pelo chat são privados de quem os enviou e nunca entram na base institucional.
 const ATTACHMENT_CATEGORY = 'anexo de conversa'
+// Perfis aceitos e regra de senha, compartilhados pelo cadastro e pela Administração.
+const ROLES = ['padrao', 'diretor', 'gerente', 'admin']
+const PRIVILEGED_ROLES = ['admin', 'gerente']
+const PASSWORD_RULE = 'A senha deve ter 8 caracteres, maiúscula, minúscula, número e símbolo.'
+const strongPassword = value => {
+  const text = String(value || '')
+  return text.length >= 8 && /[A-Z]/.test(text) && /[a-z]/.test(text) && /\d/.test(text) && /[^A-Za-z0-9]/.test(text)
+}
+// Carrega a conta alvo. Gerentes não alteram contas administrativas; só administradores podem.
+async function loadManagedUser(env, actor, targetId) {
+  const row = await env.DB.prepare('SELECT id,role,active FROM users WHERE id=?').bind(targetId).first()
+  if (!row) return {error: {message: 'Usuário não encontrado.', status: 404}}
+  if (PRIVILEGED_ROLES.includes(row.role) && actor.role !== 'admin') return {error: {message: 'Apenas administradores podem alterar contas administrativas.', status: 403}}
+  return {row}
+}
+// Impede que a última conta administradora ativa seja rebaixada ou desativada.
+async function removesLastAdmin(env, row, newRole, deactivates) {
+  const isActiveAdmin = row.role === 'admin' && Boolean(row.active)
+  const losesAdmin = (newRole !== null && newRole !== 'admin') || deactivates
+  if (!isActiveAdmin || !losesAdmin) return false
+  const count = await env.DB.prepare("SELECT COUNT(*) AS total FROM users WHERE role='admin' AND active=1").first()
+  return Number(count?.total || 0) <= 1
+}
 
 const json = (data, status = 200, extra = {}) => new Response(JSON.stringify(data), {
   status,
@@ -417,7 +440,7 @@ async function handler(context) {
     if (path === '/auth/register' && method === 'POST') {
       const email = String(body.email || '').trim().toLowerCase()
       if (!/@soph\.ro\.gov\.br$/i.test(email)) return fail('Use um e-mail institucional da SOPH.')
-      if (String(body.password || '').length < 8) return fail('A senha deve possuir ao menos 8 caracteres.')
+      if (!strongPassword(body.password)) return fail(PASSWORD_RULE)
       const sector = await env.DB.prepare('SELECT id FROM sectors WHERE lower(name)=lower(?)').bind(body.sector || '').first()
       if (!sector) return fail('Setor inválido.')
       try {
@@ -550,8 +573,12 @@ async function handler(context) {
     }
     if (path === '/users' && method === 'POST') {
       if (!['admin','gerente'].includes(user.role)) return fail('Acesso restrito.', 403)
+      const role = body.role || 'padrao'
+      if (!ROLES.includes(role)) return fail('Perfil inválido.')
+      if (PRIVILEGED_ROLES.includes(role) && user.role !== 'admin') return fail('Apenas administradores podem criar contas administrativas.', 403)
+      if (!strongPassword(body.password)) return fail(PASSWORD_RULE)
       try {
-        const result = await env.DB.prepare('INSERT INTO users(name,email,password_hash,role,sector_id) VALUES(?,?,?,?,?)').bind(body.name, String(body.email || '').toLowerCase(), await passwordHash(body.password || ''), body.role || 'padrao', body.sector_id || null).run()
+        const result = await env.DB.prepare('INSERT INTO users(name,email,password_hash,role,sector_id) VALUES(?,?,?,?,?)').bind(body.name, String(body.email || '').toLowerCase(), await passwordHash(body.password), role, body.sector_id || null).run()
         return json(await env.DB.prepare('SELECT id,name,email,role,active,sector_id FROM users WHERE id=?').bind(result.meta.last_row_id).first(), 201)
       } catch { return fail('Não foi possível criar o usuário; verifique se o e-mail já existe.', 409) }
     }
@@ -559,20 +586,38 @@ async function handler(context) {
     if (match && method === 'PATCH') {
       if (!['admin','gerente'].includes(user.role)) return fail('Acesso restrito.', 403)
       const target = Number(match[1])
-      if (body.role) await env.DB.prepare('UPDATE users SET role=? WHERE id=?').bind(body.role, target).run()
+      const managed = await loadManagedUser(env, user, target)
+      if (managed.error) return fail(managed.error.message, managed.error.status)
+      const changesRole = body.role !== undefined
+      const deactivates = body.active !== undefined && !body.active
+      if (changesRole) {
+        if (!ROLES.includes(body.role)) return fail('Perfil inválido.')
+        if (PRIVILEGED_ROLES.includes(body.role) && user.role !== 'admin') return fail('Apenas administradores podem atribuir perfis administrativos.', 403)
+      }
+      if (target === user.id && ((changesRole && body.role !== user.role) || deactivates)) return fail('Você não pode alterar o próprio perfil nem desativar a própria conta.', 403)
+      if (await removesLastAdmin(env, managed.row, changesRole ? body.role : null, deactivates)) return fail('Não é possível remover o último administrador ativo.', 409)
+      if (changesRole) await env.DB.prepare('UPDATE users SET role=? WHERE id=?').bind(body.role, target).run()
       if (body.sector_id !== undefined) await env.DB.prepare('UPDATE users SET sector_id=? WHERE id=?').bind(body.sector_id || null, target).run()
       if (body.active !== undefined) await env.DB.prepare('UPDATE users SET active=? WHERE id=?').bind(body.active ? 1 : 0, target).run()
       return json({message: 'Usuário atualizado.'})
     }
     if (match && method === 'DELETE') {
       if (!['admin','gerente'].includes(user.role)) return fail('Acesso restrito.', 403)
-      await env.DB.prepare('UPDATE users SET active=0 WHERE id=?').bind(Number(match[1])).run()
+      const target = Number(match[1])
+      const managed = await loadManagedUser(env, user, target)
+      if (managed.error) return fail(managed.error.message, managed.error.status)
+      if (target === user.id) return fail('Você não pode desativar a própria conta.', 403)
+      if (await removesLastAdmin(env, managed.row, null, true)) return fail('Não é possível remover o último administrador ativo.', 409)
+      await env.DB.prepare('UPDATE users SET active=0 WHERE id=?').bind(target).run()
       return json({message: 'Usuário desativado.'})
     }
     match = path.match(/^\/users\/(\d+)\/password$/)
     if (match && method === 'PUT') {
       if (!['admin','gerente'].includes(user.role)) return fail('Acesso restrito.', 403)
-      await env.DB.prepare('UPDATE users SET password_hash=? WHERE id=?').bind(await passwordHash(body.password || ''), Number(match[1])).run()
+      const managed = await loadManagedUser(env, user, Number(match[1]))
+      if (managed.error) return fail(managed.error.message, managed.error.status)
+      if (!strongPassword(body.password)) return fail(PASSWORD_RULE)
+      await env.DB.prepare('UPDATE users SET password_hash=? WHERE id=?').bind(await passwordHash(body.password), Number(match[1])).run()
       return json({message: 'Senha alterada.'})
     }
 
