@@ -34,6 +34,7 @@ async function seedUsers() {
 function createDb(initialUsers) {
   const users = initialUsers.map(user => ({...user}))
   const sectors = [{id: 1, name: 'Tecnologia da Informação'}]
+  const loginAttempts = new Map()
   let nextId = Math.max(...users.map(user => user.id)) + 1
 
   function query(sql, args) {
@@ -57,6 +58,10 @@ function createDb(initialUsers) {
       const sector = sectors.find(item => item.name.toLowerCase() === String(args[0]).toLowerCase())
       return sector ? {id: sector.id} : null
     }
+    if (/FROM login_attempts WHERE key=\?/.test(sql)) {
+      const row = loginAttempts.get(args[0])
+      return row ? {...row} : null
+    }
     throw new Error(`SQL não suportado no teste: ${sql}`)
   }
 
@@ -77,6 +82,15 @@ function createDb(initialUsers) {
       const user = users.find(item => item.id === args[0])
       if (user) user.active = 0
       return {meta: {changes: user ? 1 : 0}}
+    }
+    if (/^INSERT INTO login_attempts/.test(sql)) {
+      const [key, failures, window_start, locked_until] = args
+      loginAttempts.set(key, {failures, window_start, locked_until})
+      return {meta: {changes: 1}}
+    }
+    if (/^DELETE FROM login_attempts WHERE key=\?$/.test(sql)) {
+      loginAttempts.delete(args[0])
+      return {meta: {changes: 1}}
     }
     return {meta: {changes: 0}} // CREATE TABLE, ALTER, INSERT OR IGNORE em sectors etc.
   }
@@ -104,9 +118,10 @@ async function setup() {
   return {env: {DB: db, SECRET_KEY}, db}
 }
 
-async function call(env, method, path, body, token) {
+async function call(env, method, path, body, token, ip) {
   const headers = {'content-type': 'application/json'}
   if (token) headers.authorization = `Bearer ${token}`
+  if (ip) headers['cf-connecting-ip'] = ip
   const request = new Request(`https://soph.test/api${path}`, {
     method,
     headers,
@@ -230,4 +245,62 @@ test('segundo administrador tem os mesmos poderes do primeiro', async () => {
   const {env} = await setup()
   const token = await loginAs(env, ...SEGUNDO_ADMIN)
   assert.equal((await call(env, 'PATCH', '/users/1', {sector_id: 1}, token)).status, 200)
+})
+
+const EMAIL = ADMIN[0]
+const RIGHT = ADMIN[1]
+const WRONG = 'senha-errada'
+
+test('bloqueia a conta após 5 senhas erradas, mesmo com a senha correta', async () => {
+  const {env} = await setup()
+  const ip = '203.0.113.10'
+  for (let i = 0; i < 5; i++) {
+    assert.equal((await call(env, 'POST', '/auth/login', {email: EMAIL, password: WRONG}, undefined, ip)).status, 401)
+  }
+  assert.equal((await call(env, 'POST', '/auth/login', {email: EMAIL, password: RIGHT}, undefined, ip)).status, 429)
+})
+
+test('o bloqueio não revela se o e-mail existe', async () => {
+  const {env} = await setup()
+  const ip = '203.0.113.11'
+  const missing = 'inexistente@soph.ro.gov.br'
+  for (let i = 0; i < 5; i++) {
+    assert.equal((await call(env, 'POST', '/auth/login', {email: missing, password: WRONG}, undefined, ip)).status, 401)
+  }
+  assert.equal((await call(env, 'POST', '/auth/login', {email: missing, password: WRONG}, undefined, ip)).status, 429)
+})
+
+test('login correto zera o contador da conta', async () => {
+  const {env} = await setup()
+  const ip = '203.0.113.12'
+  for (let i = 0; i < 4; i++) await call(env, 'POST', '/auth/login', {email: EMAIL, password: WRONG}, undefined, ip)
+  assert.equal((await call(env, 'POST', '/auth/login', {email: EMAIL, password: RIGHT}, undefined, ip)).status, 200)
+  for (let i = 0; i < 4; i++) await call(env, 'POST', '/auth/login', {email: EMAIL, password: WRONG}, undefined, ip)
+  assert.equal((await call(env, 'POST', '/auth/login', {email: EMAIL, password: RIGHT}, undefined, ip)).status, 200)
+})
+
+test('o bloqueio expira após 15 minutos', async () => {
+  const {env} = await setup()
+  const ip = '203.0.113.14'
+  const realNow = Date.now
+  let fake = realNow()
+  Date.now = () => fake
+  try {
+    for (let i = 0; i < 5; i++) await call(env, 'POST', '/auth/login', {email: EMAIL, password: WRONG}, undefined, ip)
+    assert.equal((await call(env, 'POST', '/auth/login', {email: EMAIL, password: RIGHT}, undefined, ip)).status, 429)
+    fake += 16 * 60 * 1000
+    assert.equal((await call(env, 'POST', '/auth/login', {email: EMAIL, password: RIGHT}, undefined, ip)).status, 200)
+  } finally {
+    Date.now = realNow
+  }
+})
+
+test('limite por origem bloqueia tentativas espalhadas por várias contas', async () => {
+  const {env} = await setup()
+  const attacker = '203.0.113.15'
+  for (let i = 0; i < 50; i++) {
+    await call(env, 'POST', '/auth/login', {email: `conta${i}@soph.ro.gov.br`, password: WRONG}, undefined, attacker)
+  }
+  assert.equal((await call(env, 'POST', '/auth/login', {email: EMAIL, password: RIGHT}, undefined, attacker)).status, 429)
+  assert.equal((await call(env, 'POST', '/auth/login', {email: EMAIL, password: RIGHT}, undefined, '198.51.100.5')).status, 200)
 })
