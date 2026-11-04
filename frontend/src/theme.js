@@ -6,7 +6,7 @@ export const ColorModeContext=React.createContext({mode:'dark',toggle:()=>{}})
 export const makeTheme=mode=>createTheme({
   palette:{
     mode,
-    primary:{main:'#f26522',contrastText:'#fff'},
+    primary:mode==='dark'?{main:'#f26522',contrastText:'#1a0f08'}:{main:'#c2410c',contrastText:'#ffffff'},
     secondary:{main:'#747b7d'},
     background:mode==='dark'?{default:'#151311',paper:'#24201d'}:{default:'#f8f5f1',paper:'#ffffff'},
     text:mode==='dark'?{primary:'#fff8f2',secondary:'#c9beb5'}:{primary:'#2c211b',secondary:'#71635b'},

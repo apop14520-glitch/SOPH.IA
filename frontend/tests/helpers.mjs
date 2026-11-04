@@ -84,6 +84,10 @@ export function createDb(initialUsers) {
       const message = chatMessages.find(item => item.id === args[0])
       return message ? {...message} : null
     }
+    if (/^SELECT id FROM conversations WHERE id=\? AND user_id=\?$/.test(sql)) {
+      const conversation = conversations.find(item => item.id === args[0] && item.user_id === args[1])
+      return conversation ? {id: conversation.id} : null
+    }
     throw new Error(`SQL não suportado no teste: ${sql}`)
   }
 
@@ -120,6 +124,12 @@ export function createDb(initialUsers) {
       chatMessages.push(row)
       return {meta: {last_row_id: row.id, changes: 1}}
     }
+    const renamed = sql.match(/^UPDATE conversations SET title=\?(?:,updated_at=CURRENT_TIMESTAMP)? WHERE id=\?$/)
+    if (renamed) {
+      const conversation = conversations.find(item => item.id === args[1])
+      if (conversation) conversation.title = args[0]
+      return {meta: {changes: conversation ? 1 : 0}}
+    }
     return {meta: {changes: 0}} // CREATE TABLE, ALTER, UPDATE conversations, INSERT OR IGNORE em sectors etc.
   }
 
@@ -133,7 +143,21 @@ export function createDb(initialUsers) {
         args: [],
         bind(...args) { this.args = args; return this },
         async first() { return query(this.sql, this.args) },
-        async all() { return {results: []} },
+        async all() {
+          if (/FROM conversations c WHERE c\.user_id=\?/.test(this.sql)) {
+            // Mesma filtragem da rota: só conversas com mensagens, com a primeira pergunta do usuário.
+            return {results: conversations
+              .filter(item => item.user_id === this.args[0] && chatMessages.some(message => message.conversation_id === item.id))
+              .map(item => ({
+                id: item.id,
+                title: item.title,
+                created_at: item.created_at ?? null,
+                updated_at: item.updated_at ?? null,
+                first_prompt: chatMessages.find(message => message.conversation_id === item.id && message.role === 'user')?.content ?? null,
+              }))}
+          }
+          return {results: []}
+        },
         async run() { return exec(this.sql, this.args) },
       }
     },

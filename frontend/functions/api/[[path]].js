@@ -138,8 +138,10 @@ async function currentUser(request, env) {
 
 const publicUser = user => ({...user, active: Boolean(user.active)})
 const TITLE_MAX_WORDS = 4
+const AUTO_TITLE_MAX_WORDS = 8
+const USER_TITLE_MAX_LENGTH = 120
 const TITLE_ACRONYMS = /^(soph\.?ia|soph|etp|tr|rilc|sei|ti|rh|pdf|docx|ia)$/i
-const formatTitle = value => {
+const formatTitle = (value, maxWords = TITLE_MAX_WORDS) => {
   const words = String(value || 'Nova conversa')
     .replace(/<think>[\s\S]*?<\/think>/gi, '')
     .replace(/^[#*\s"“”']+|[#*\s"“”'.:;!?]+$/g, '')
@@ -147,7 +149,7 @@ const formatTitle = value => {
     .trim()
     .split(' ')
     .filter(Boolean)
-    .slice(0, TITLE_MAX_WORDS)
+    .slice(0, maxWords)
   const sentence = words.map((word, index) => {
     if (TITLE_ACRONYMS.test(word)) return word.toLocaleUpperCase('pt-BR').replace('SOPHIA', 'SOPH.IA')
     const lower = word.toLocaleLowerCase('pt-BR')
@@ -155,7 +157,9 @@ const formatTitle = value => {
   }).join(' ')
   return sentence || 'Nova conversa'
 }
-const titleFor = text => formatTitle(String(text).trim().replace(/\s+/g, ' '))
+const titleFor = text => formatTitle(String(text).trim().replace(/\s+/g, ' '), AUTO_TITLE_MAX_WORDS)
+// Nome escolhido pelo usuário: mantém a grafia; só remove espaços extras e limita o tamanho.
+const userTitle = value => String(value || '').replace(/\s+/g, ' ').trim().slice(0, USER_TITLE_MAX_LENGTH).trim()
 const parseJson = (value, fallback = []) => { try { return JSON.parse(value) } catch { return fallback } }
 
 function modelText(result) {
@@ -572,10 +576,13 @@ async function handler(context) {
     if (path === '/conversations' && method === 'GET') {
       const conversations = (await env.DB.prepare("SELECT c.id,c.title,c.created_at,c.updated_at,(SELECT content FROM chat_messages m WHERE m.conversation_id=c.id AND m.role='user' ORDER BY m.id LIMIT 1) first_prompt FROM conversations c WHERE c.user_id=? AND EXISTS(SELECT 1 FROM chat_messages m WHERE m.conversation_id=c.id) ORDER BY c.updated_at DESC").bind(user.id).all()).results
       for (const conversation of conversations) {
-        const correctedTitle = /^nova conversa$/i.test(conversation.title) && conversation.first_prompt ? titleFor(conversation.first_prompt) : formatTitle(conversation.title)
-        if (correctedTitle !== conversation.title) {
-          conversation.title = correctedTitle
-          await env.DB.prepare('UPDATE conversations SET title=? WHERE id=?').bind(conversation.title, conversation.id).run()
+        // Só corrige o título padrão; nomes já salvos nunca são reescritos ao listar.
+        if (/^nova conversa$/i.test(conversation.title) && conversation.first_prompt) {
+          const correctedTitle = titleFor(conversation.first_prompt)
+          if (correctedTitle !== conversation.title) {
+            conversation.title = correctedTitle
+            await env.DB.prepare('UPDATE conversations SET title=? WHERE id=?').bind(conversation.title, conversation.id).run()
+          }
         }
         delete conversation.first_prompt
       }
@@ -596,7 +603,7 @@ async function handler(context) {
       const id = Number(match[1])
       const conversation = await env.DB.prepare('SELECT id FROM conversations WHERE id=? AND user_id=?').bind(id, user.id).first()
       if (!conversation) return fail('Conversa não encontrada.', 404)
-      const title = formatTitle(body.title)
+      const title = userTitle(body.title)
       if (!title || /^nova conversa$/i.test(title)) return fail('Informe um nome válido para a conversa.')
       await env.DB.prepare('UPDATE conversations SET title=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(title, id).run()
       return json({id, title})
