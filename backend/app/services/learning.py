@@ -1,3 +1,4 @@
+import math
 import re
 
 from sqlalchemy.orm import Session
@@ -19,6 +20,8 @@ def relevant_approved_examples(db: Session, prompt: str, limit: int = 3) -> list
     }
     if not terms:
         return []
+    # Exige correspondência forte: ao menos 2 termos e cerca de 40% dos termos do pedido.
+    minimum = max(2, math.ceil(len(terms) * 0.4))
     ranked: list[tuple[int, LearningExample]] = []
     for example in (
         db.query(LearningExample)
@@ -29,7 +32,7 @@ def relevant_approved_examples(db: Session, prompt: str, limit: int = 3) -> list
     ):
         haystack = f"{example.prompt} {example.response}".casefold()
         score = sum(1 for term in terms if term in haystack)
-        if score:
+        if score >= minimum:
             ranked.append((score, example))
     ranked.sort(key=lambda item: (item[0], item[1].id), reverse=True)
     return [example for _, example in ranked[:limit]]
@@ -42,7 +45,7 @@ def learning_context(db: Session, prompt: str) -> str:
     blocks = []
     for example in examples:
         blocks.append(
-            "EXEMPLO INSTITUCIONAL APROVADO\n"
+            "EXEMPLO DE REDAÇÃO APROVADO (referência de estilo; não copie o conteúdo nem o use como molde)\n"
             f"Pedido anterior: {example.prompt[:1800]}\n"
             f"Resposta aprovada: {example.response[:5000]}"
         )

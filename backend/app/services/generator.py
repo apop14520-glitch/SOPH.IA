@@ -7,38 +7,59 @@ from app.core.config import get_settings
 from app.services.ai_provider import configured_generation
 
 
-HEADING_ACRONYMS = ("SOPH.IA", "SOPH", "ETP", "TR", "RILC", "SEI", "TI", "RH", "PDF", "DOCX", "IA")
+HEADING_ACRONYMS = (
+    "SOPH.IA", "SOPH", "ETP", "TR", "RILC", "SEI", "TI", "RH", "PDF", "DOCX", "IA",
+    "CNPJ", "CPF", "DFD", "TCU", "CGU", "ANTAQ", "LTDA", "PNCP", "SRP", "EPP", "ME",
+    "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X",
+)
+_PRESERVED = {item.upper(): item for item in HEADING_ACRONYMS}
+KNOWN_TITLES = {
+    "DESPACHO", "MEMORANDO", "OFÍCIO", "PORTARIA", "EDITAL", "PARECER", "MINUTA",
+    "ESTUDO TÉCNICO PRELIMINAR", "TERMO DE REFERÊNCIA", "RELATÓRIO TÉCNICO",
+}
+_NUMBERED_TITLE = re.compile(r"^\s*\d+(?:\.\d+)*[.)]?\s+[^a-záéíóúâêôãõç\n]+$")
 
 
 def _sentence_case(value: str) -> str:
-    lowered = value.strip().casefold()
-    if not lowered:
-        return lowered
-    lowered = lowered[:1].upper() + lowered[1:]
-    for acronym in HEADING_ACRONYMS:
-        pattern = r"(?<![\w.])" + re.escape(acronym.casefold()) + r"(?!\w)"
-        lowered = re.sub(pattern, acronym, lowered, flags=re.IGNORECASE)
-    return lowered
+    """Converte apenas palavras totalmente em caixa alta; siglas e nomes conhecidos são preservados."""
+
+    def fix(match: re.Match) -> str:
+        token = match.group(0)
+        core = token.strip(".,:;()–-/")
+        if not core:
+            return token
+        if core.upper() in _PRESERVED:
+            return token.replace(core, _PRESERVED[core.upper()], 1)
+        if len(core) > 1 and core.isupper():
+            return token.replace(core, core.lower(), 1)
+        return token
+
+    result = re.sub(r"\S+", fix, value.strip())
+    return re.sub(r"[^\W\d_]", lambda m: m.group(0).upper(), result, count=1)
 
 
 def normalize_headings(text: str) -> str:
+    """Ajusta títulos ao formato de frase sem alterar o corpo do texto.
+
+    Aplica-se a títulos Markdown, a linhas em negrito e a títulos em caixa alta
+    reconhecidos (lista de documentos ou seções numeradas). Linhas comuns, nomes
+    de pessoas e identificadores como CNPJ permanecem como foram escritos.
+    """
     normalized_lines = []
     for line in text.splitlines():
         markdown = re.match(r"^(\s*#{1,6}\s+)(.+?)\s*$", line)
         bold = re.match(r"^(\s*\*\*)([^*]+)(\*\*\s*)$", line)
-        plain_upper = (
-            line.strip()
-            and len(line.strip()) <= 80
-            and any(character.isalpha() for character in line)
-            and line.strip() == line.strip().upper()
+        stripped = line.strip()
+        plain_title = bool(stripped) and stripped == stripped.upper() and (
+            stripped in KNOWN_TITLES or bool(_NUMBERED_TITLE.match(line))
         )
         if markdown:
             line = markdown.group(1) + _sentence_case(markdown.group(2))
         elif bold:
             line = bold.group(1) + _sentence_case(bold.group(2)) + bold.group(3)
-        elif plain_upper:
+        elif plain_title:
             prefix = line[: len(line) - len(line.lstrip())]
-            line = prefix + _sentence_case(line.strip())
+            line = prefix + _sentence_case(stripped)
         normalized_lines.append(line)
     return "\n".join(normalized_lines)
 
@@ -268,7 +289,7 @@ async def generate(kind: str, fields: dict, sources: list[dict], db: Session | N
         try:
             result = await configured_generation(
                 db,
-                prompt=f"Aprimore e complete a minuta abaixo. Retorne somente o documento final.\n\nMINUTA:\n{draft}",
+                prompt=f"Aprimore e complete a minuta abaixo. Os campos entre colchetes indicam dados ausentes: omita-os na versão final, sem deixar colchetes ou campos para preenchimento. Retorne somente o documento final.\n\nMINUTA:\n{draft}",
                 system_instruction=DOCUMENT_SYSTEM_INSTRUCTION,
             )
         except (ValueError, httpx.HTTPError):
@@ -279,7 +300,7 @@ async def generate(kind: str, fields: dict, sources: list[dict], db: Session | N
         return draft
     prompt = (
         "Você é a SOPH.IA. Aprimore a minuta administrativa abaixo sem inventar fatos, "
-        "números ou fundamentos. Preserve campos [INFORMAÇÃO A COMPLETAR]. Retorne apenas "
+        "números ou fundamentos. Os campos entre colchetes indicam dados ausentes: omita-os na versão final. Retorne apenas "
         f"o documento final.\n\nMINUTA:\n{draft}"
     )
     async with httpx.AsyncClient(timeout=180) as client:
@@ -338,8 +359,8 @@ async def chat_reply(
             "Nunca reproduza sumários, cabeçalhos, rodapés, URLs de impressão ou sequências de traços como texto. "
             "Use somente os fatos presentes no pedido ou no contexto institucional. Não invente leis, números, "
             "processos ou autoridades. Responda diretamente ao que foi solicitado. Não devolva listas genéricas "
-            "perguntando quais dados o usuário deve informar: elabore a melhor resposta possível e marque somente "
-            "dados realmente ausentes com [INFORMAÇÃO A COMPLETAR]. Quando analisar um documento, não reproduza o "
+            "perguntando quais dados o usuário deve informar: elabore a melhor resposta possível e omita somente "
+            "dados realmente ausentes, sem colchetes nem campos para preenchimento. Quando analisar um documento, não reproduza o "
             "texto bruto; apresente confirmação da leitura, síntese, principais pontos, aplicação prática para a "
             "SOPH e próximos passos, seguindo o padrão conversacional do ChatGPT. Use UTF-8, Unicode NFC e português "
             "brasileiro. Toda minuta exige revisão humana.\n\n"
@@ -357,17 +378,17 @@ async def chat_reply(
     if any(word in lower for word in ("etp", "estudo técnico preliminar")):
         return (
             "## Estudo Técnico Preliminar\n\n### 1. Objeto\n\n"
-            f"{prompt.strip()}\n\n### 2. Necessidade da contratação\n\n[INFORMAÇÃO A COMPLETAR]\n\n"
+            f"{prompt.strip()}\n\n### 2. Necessidade da contratação\n\nA necessidade decorre do objeto descrito acima e deve ser detalhada pela unidade demandante.\n\n"
             "### 3. Requisitos e alternativas\n\nA solução deverá atender às necessidades operacionais da SOPH, "
             "observados os modelos e normativos institucionais aplicáveis.\n\n### 4. Quantitativos e valor\n\n"
-            "[MEMÓRIA DE CÁLCULO E PESQUISA DE PREÇOS A COMPLETAR]\n\n### 5. Conclusão\n\nA viabilidade deverá ser "
+            "A memória de cálculo e a pesquisa de preços serão apresentadas pela unidade demandante.\n\n### 5. Conclusão\n\nA viabilidade deverá ser "
             "confirmada pela unidade competente após a complementação dos dados técnicos e econômicos."
         )
     if "termo de referência" in lower or re.search(r"\btr\b", lower):
         return (
             "## Termo de Referência\n\n### 1. Objeto\n\n"
-            f"{prompt.strip()}\n\n### 2. Justificativa\n\n[INFORMAÇÃO A COMPLETAR]\n\n### 3. Especificações e "
-            "quantitativos\n\n[INFORMAÇÃO A COMPLETAR]\n\n### 4. Execução, fiscalização e pagamento\n\nA execução "
+            f"{prompt.strip()}\n\n### 2. Justificativa\n\nA justificativa será apresentada pela unidade demandante, em conformidade com o objeto descrito acima.\n\n### 3. Especificações e "
+            "quantitativos\n\nAs especificações e os quantitativos serão detalhados pela unidade demandante.\n\n### 4. Execução, fiscalização e pagamento\n\nA execução "
             "será acompanhada por agente formalmente designado e o pagamento dependerá do recebimento do objeto."
         )
     if "despacho" in lower:
