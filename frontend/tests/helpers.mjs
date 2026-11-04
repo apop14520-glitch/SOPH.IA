@@ -1,0 +1,160 @@
+// Auxiliares para testar o Worker com um D1 simulado em memória e login real.
+// Usado pelos testes em frontend/tests e pela medição das respostas da avaliação.
+export const {onRequest} = await import(new URL('../functions/api/[[path]].js', import.meta.url).href)
+
+export const SECRET_KEY = 'chave-de-teste-com-mais-de-32-caracteres'
+export const ADMIN = ['admin@soph.ro.gov.br', 'Admin@1234']
+export const SEGUNDO_ADMIN = ['segundo@soph.ro.gov.br', 'Segundo@1234']
+export const GERENTE = ['gerente@soph.ro.gov.br', 'Gerente@1234']
+
+const encoder = new TextEncoder()
+
+function base64url(bytes) {
+  let binary = ''
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+}
+
+// Mesmo formato de hash usado pelo Worker (PBKDF2-SHA256, 100 mil iterações).
+export async function passwordHash(password, salt = 'salt-de-teste-0001') {
+  const material = await crypto.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, ['deriveBits'])
+  const bits = await crypto.subtle.deriveBits({name: 'PBKDF2', hash: 'SHA-256', salt: encoder.encode(salt), iterations: 100000}, material, 256)
+  return `pbkdf2$100000$${salt}$${base64url(new Uint8Array(bits))}`
+}
+
+export async function seedUsers() {
+  return [
+    {id: 1, name: 'Administrador', email: 'admin@soph.ro.gov.br', role: 'admin', active: 1, sector_id: 1, password_hash: await passwordHash('Admin@1234')},
+    {id: 2, name: 'Segundo Admin', email: 'segundo@soph.ro.gov.br', role: 'admin', active: 1, sector_id: 1, password_hash: await passwordHash('Segundo@1234')},
+    {id: 3, name: 'Servidor', email: 'servidor@soph.ro.gov.br', role: 'padrao', active: 1, sector_id: 1, password_hash: await passwordHash('Servidor@1234')},
+    {id: 4, name: 'Gerente de TI', email: 'gerente@soph.ro.gov.br', role: 'gerente', active: 1, sector_id: 1, password_hash: await passwordHash('Gerente@1234')},
+  ]
+}
+
+// D1 simulado: cobre apenas as instruções SQL usadas pelas rotas testadas.
+export function createDb(initialUsers) {
+  const users = initialUsers.map(user => ({...user}))
+  const sectors = [{id: 1, name: 'Tecnologia da Informação'}]
+  const loginAttempts = new Map()
+  const conversations = []
+  const chatMessages = []
+  let nextId = Math.max(...users.map(user => user.id)) + 1
+  let nextMessageId = 1
+
+  function query(sql, args) {
+    if (/SELECT COUNT\(\*\) count FROM users/.test(sql)) return {count: users.length}
+    if (/WHERE u\.id=\? AND u\.active=1/.test(sql)) {
+      const user = users.find(item => item.id === args[0] && item.active)
+      return user ? {...user, sector_name: null} : null
+    }
+    if (/WHERE lower\(u\.email\)=lower\(\?\)/.test(sql)) {
+      const user = users.find(item => item.email === String(args[0]).toLowerCase())
+      return user ? {...user, sector_name: null} : null
+    }
+    if (/SELECT COUNT\(\*\) AS total FROM users WHERE role='admin' AND active=1/.test(sql)) {
+      return {total: users.filter(item => item.role === 'admin' && item.active).length}
+    }
+    if (/SELECT id,role,active FROM users WHERE id=\?/.test(sql) || /SELECT id,name,email,role,active,sector_id FROM users WHERE id=\?/.test(sql)) {
+      const user = users.find(item => item.id === args[0])
+      return user ? {...user} : null
+    }
+    if (/FROM sectors WHERE lower\(name\)=lower\(\?\)/.test(sql)) {
+      const sector = sectors.find(item => item.name.toLowerCase() === String(args[0]).toLowerCase())
+      return sector ? {id: sector.id} : null
+    }
+    if (/FROM login_attempts WHERE key=\?/.test(sql)) {
+      const row = loginAttempts.get(args[0])
+      return row ? {...row} : null
+    }
+    if (/FROM settings WHERE key=\?/.test(sql)) return null
+    if (/^SELECT \* FROM conversations WHERE id=\? AND user_id=\?$/.test(sql)) {
+      const conversation = conversations.find(item => item.id === args[0] && item.user_id === args[1])
+      return conversation ? {...conversation} : null
+    }
+    if (/^SELECT \* FROM chat_messages WHERE id=\?$/.test(sql)) {
+      const message = chatMessages.find(item => item.id === args[0])
+      return message ? {...message} : null
+    }
+    throw new Error(`SQL não suportado no teste: ${sql}`)
+  }
+
+  function exec(sql, args) {
+    if (/^INSERT INTO users/.test(sql)) {
+      const [name, email, password_hash, role, sector_id] = args
+      const row = {id: nextId++, name, email, password_hash, role, active: 1, sector_id}
+      users.push(row)
+      return {meta: {last_row_id: row.id, changes: 1}}
+    }
+    const update = sql.match(/^UPDATE users SET (role|sector_id|active|password_hash)=\? WHERE id=\?$/)
+    if (update) {
+      const user = users.find(item => item.id === args[1])
+      if (user) user[update[1]] = args[0]
+      return {meta: {changes: user ? 1 : 0}}
+    }
+    if (/^UPDATE users SET active=0 WHERE id=\?$/.test(sql)) {
+      const user = users.find(item => item.id === args[0])
+      if (user) user.active = 0
+      return {meta: {changes: user ? 1 : 0}}
+    }
+    if (/^INSERT INTO login_attempts/.test(sql)) {
+      const [key, failures, window_start, locked_until] = args
+      loginAttempts.set(key, {failures, window_start, locked_until})
+      return {meta: {changes: 1}}
+    }
+    if (/^DELETE FROM login_attempts WHERE key=\?$/.test(sql)) {
+      loginAttempts.delete(args[0])
+      return {meta: {changes: 1}}
+    }
+    if (/^INSERT INTO chat_messages/.test(sql)) {
+      const role = sql.includes("'assistant'") ? 'assistant' : 'user'
+      const row = {id: nextMessageId++, conversation_id: args[0], role, content: args[1], sources: '[]'}
+      chatMessages.push(row)
+      return {meta: {last_row_id: row.id, changes: 1}}
+    }
+    return {meta: {changes: 0}} // CREATE TABLE, ALTER, UPDATE conversations, INSERT OR IGNORE em sectors etc.
+  }
+
+  return {
+    users,
+    conversations,
+    chatMessages,
+    prepare(sql) {
+      return {
+        sql,
+        args: [],
+        bind(...args) { this.args = args; return this },
+        async first() { return query(this.sql, this.args) },
+        async all() { return {results: []} },
+        async run() { return exec(this.sql, this.args) },
+      }
+    },
+    async batch(statements) {
+      return Promise.all(statements.map(statement => statement.run()))
+    },
+  }
+}
+
+export async function setup(extra = {}) {
+  const db = createDb(await seedUsers())
+  return {env: {DB: db, SECRET_KEY, ...extra}, db}
+}
+
+export async function call(env, method, path, body, token, ip) {
+  const headers = {'content-type': 'application/json'}
+  if (token) headers.authorization = `Bearer ${token}`
+  if (ip) headers['cf-connecting-ip'] = ip
+  const request = new Request(`https://soph.test/api${path}`, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
+  return onRequest({request, env, params: {path: path.replace(/^\//, '').split('/')}})
+}
+
+// Faz login pela própria rota, para que o token seja o gerado pelo Worker.
+export async function loginAs(env, email, password) {
+  const res = await call(env, 'POST', '/auth/login', {email, password})
+  const data = await res.json()
+  if (res.status !== 200) throw new Error(`login de ${email} falhou: ${data.detail}`)
+  return data.access_token
+}
