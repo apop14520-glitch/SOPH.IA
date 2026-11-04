@@ -3,21 +3,21 @@
 import {test} from 'node:test'
 import assert from 'node:assert/strict'
 import {randomBytes} from 'node:crypto'
-import {ADMIN, call, setup} from './helpers.mjs'
+import {ADMIN, call, loginAs, setup} from './helpers.mjs'
 
 const GMAIL = 'soph.ia.teste@gmail.com'
 const SENHA_DE_APP = randomBytes(12).toString('base64url')
 const MAIL_FROM = `SOPH.IA <${GMAIL}>`
 
 // Servidor SMTP simulado: cada comando recebido dispara a resposta seguinte do roteiro.
-function fakeSmtp({rcptReply = '250 2.1.5 OK\r\n'} = {}) {
+function fakeSmtp({rcptReply = '250 2.1.5 OK\r\n', authReply = '235 2.7.0 Accepted\r\n'} = {}) {
   const sent = []
   const encoder = new TextEncoder()
   const decoder = new TextDecoder()
   const script = [
     '220 smtp.gmail.com ESMTP\r\n',
     '250-smtp.gmail.com at your service\r\n250-AUTH LOGIN PLAIN\r\n250 SIZE 35882577\r\n',
-    '235 2.7.0 Accepted\r\n',
+    authReply,
     '250 2.1.0 OK\r\n',
     rcptReply,
     '354 Go ahead\r\n',
@@ -96,6 +96,37 @@ test('servidor SMTP pode ser trocado por variável, sem alterar o padrão do Gma
   const {env} = await setup({SMTP_CONNECT: smtp.connect, SMTP_USER: GMAIL, SMTP_PASS: SENHA_DE_APP, MAIL_FROM, SMTP_HOST: 'smtp.exemplo.test', SMTP_PORT: '587'})
   await call(env, 'POST', '/auth/forgot', {email: ADMIN[0]})
   assert.deepEqual(smtp.calls[0].address, {hostname: 'smtp.exemplo.test', port: 587})
+})
+
+test('teste de envio: admin recebe confirmação e o destinatário é a própria conta de envio', async () => {
+  const smtp = fakeSmtp()
+  const {env} = await setup({SMTP_CONNECT: smtp.connect, SMTP_USER: GMAIL, SMTP_PASS: SENHA_DE_APP, MAIL_FROM})
+  const admin = await loginAs(env, ADMIN[0], ADMIN[1])
+  const res = await call(env, 'POST', '/admin/mail/test', undefined, admin)
+  assert.equal(res.status, 200)
+  assert.match((await res.json()).message, new RegExp(GMAIL.replace('.', '\\.')))
+  assert.equal(commandOf(smtp.sent, 'RCPT TO:')?.trim(), `RCPT TO:<${GMAIL}>`)
+})
+
+test('teste de envio mostra a recusa exata do Gmail (senha de app rejeitada)', async () => {
+  const smtp = fakeSmtp({authReply: '535 5.7.8 Username and Password not accepted\r\n'})
+  const {env} = await setup({SMTP_CONNECT: smtp.connect, SMTP_USER: GMAIL, SMTP_PASS: SENHA_DE_APP, MAIL_FROM})
+  const admin = await loginAs(env, ADMIN[0], ADMIN[1])
+  const res = await call(env, 'POST', '/admin/mail/test', undefined, admin)
+  assert.equal(res.status, 502)
+  assert.match((await res.json()).detail, /535 5\.7\.8/)
+})
+
+test('teste de envio é restrito ao admin e exige SMTP configurado', async () => {
+  const smtp = fakeSmtp()
+  const {env} = await setup({SMTP_CONNECT: smtp.connect, SMTP_USER: GMAIL, SMTP_PASS: SENHA_DE_APP, MAIL_FROM})
+  const admin = await loginAs(env, ADMIN[0], ADMIN[1])
+  assert.equal((await call(env, 'POST', '/users', {name: 'Padrão', email: 'padrao.teste@gmail.com', password: 'Novo@12345', role: 'padrao', sector_id: 1}, admin)).status, 201)
+  const padrao = await loginAs(env, 'padrao.teste@gmail.com', 'Novo@12345')
+  assert.equal((await call(env, 'POST', '/admin/mail/test', undefined, padrao)).status, 403)
+  const semSmtp = await setup()
+  const adminSemSmtp = await loginAs(semSmtp.env, ADMIN[0], ADMIN[1])
+  assert.equal((await call(semSmtp.env, 'POST', '/admin/mail/test', undefined, adminSemSmtp)).status, 503)
 })
 
 test('usuário SMTP sem remetente configurado não habilita o envio', async () => {

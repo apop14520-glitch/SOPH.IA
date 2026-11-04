@@ -824,6 +824,17 @@ async function handler(context) {
       if (!['admin','gerente'].includes(user.role)) return fail('Acesso restrito.', 403)
       return json((await env.DB.prepare('SELECT u.id,u.name,u.email,u.role,u.active,u.sector_id,s.name sector_name FROM users u LEFT JOIN sectors s ON s.id=u.sector_id ORDER BY u.name').all()).results.map(publicUser))
     }
+    // Diagnóstico do envio: manda um teste para a própria conta de envio e mostra a resposta exata do Gmail.
+    if (path === '/admin/mail/test' && method === 'POST') {
+      if (user.role !== 'admin') return fail('Acesso restrito.', 403)
+      if (!(env.SMTP_USER && env.SMTP_PASS && env.MAIL_FROM)) return fail('O envio pelo Gmail não está configurado (SMTP_USER, SMTP_PASS e MAIL_FROM).', 503)
+      try {
+        await sendSmtpMail(env, env.SMTP_USER, 'Teste de envio da SOPH.IA', '<p>Se você recebeu esta mensagem, o envio de e-mail da SOPH.IA está funcionando.</p>')
+        return json({message: `Teste enviado para ${env.SMTP_USER}. Confira a caixa de entrada dessa conta e o spam.`})
+      } catch (error) {
+        return fail(`O Gmail recusou o envio: ${String(error.message).slice(0, 200)}`, 502)
+      }
+    }
     if (path === '/users' && method === 'POST') {
       if (!['admin','gerente'].includes(user.role)) return fail('Acesso restrito.', 403)
       const role = body.role || 'padrao'
