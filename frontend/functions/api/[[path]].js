@@ -413,6 +413,83 @@ async function institutionalReferences(env, prompt, attachments = []) {
   return Promise.all(fallback.map(item => extractDocument(env, item)))
 }
 
+// Pós-processamento das respostas da IA. O prompt pede o formato, mas o modelo nem sempre obedece,
+// então a resposta é ajustada antes de ser salva e exibida. Só remove ou corrige; não cria conteúdo.
+const INTERNAL_LABEL = /^(observacao|observacoes|validacao necessaria|criterio de resposta|nota do assistente|analise interna)\b/
+const SIGLAS = ['SOPH.IA', 'SOPH', 'ETP', 'TR', 'RILC', 'SEI', 'TI', 'RH', 'PDF', 'DOCX', 'IA', 'CNPJ', 'CPF', 'DFD', 'TCU', 'CGU', 'ANTAQ', 'LTDA', 'PNCP', 'SRP', 'EPP', 'ME', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X']
+const SIGLA_CANONICA = new Map(SIGLAS.map(sigla => [sigla.toUpperCase(), sigla]))
+const TITULOS_CONHECIDOS = new Set(['DESPACHO', 'MEMORANDO', 'OFÍCIO', 'PORTARIA', 'EDITAL', 'PARECER', 'MINUTA', 'ESTUDO TÉCNICO PRELIMINAR', 'TERMO DE REFERÊNCIA', 'RELATÓRIO TÉCNICO'])
+const TITULO_NUMERADO = /^\d+(?:\.\d+)*[.)]?\s+/
+const COLCHETES = /\[[^\]\n]{0,160}\](?!\()/g
+const semAcento = value => String(value).normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
+const ehTituloMarkdown = linha => /^\s*#{1,6}\s/.test(linha) || /^\s*\*\*[^*]+\*\*\s*:?\s*$/.test(linha)
+
+// Palavras totalmente em maiúscula viram minúsculas; siglas oficiais e nomes com outra grafia permanecem.
+function formatoDeFrase(texto) {
+  const palavras = String(texto).trim().split(/\s+/).map(token => {
+    const core = token.replace(/^[.,:;()–\-\/]+|[.,:;()–\-\/]+$/g, '')
+    if (!core) return token
+    const maiuscula = core.toLocaleUpperCase('pt-BR')
+    if (SIGLA_CANONICA.has(maiuscula)) return token.replace(core, SIGLA_CANONICA.get(maiuscula))
+    const minuscula = core.toLocaleLowerCase('pt-BR')
+    if (core.length > 1 && core === maiuscula && core !== minuscula) return token.replace(core, minuscula)
+    return token
+  })
+  return palavras.join(' ').replace(/\p{L}/u, letra => letra.toLocaleUpperCase('pt-BR'))
+}
+
+// Remove seções de comentário interno (Observação, Validação necessária etc.). Um título com esse nome
+// omite o conteúdo até o próximo título; um rótulo em linha (**Observação:** ...) omite só a própria linha.
+function removeSecoesInternas(texto) {
+  const mantidas = []
+  let omitindo = false
+  for (const linha of texto.split('\n')) {
+    if (INTERNAL_LABEL.test(semAcento(linha.replace(/^[\s#*]+/, '')))) {
+      if (ehTituloMarkdown(linha)) omitindo = true
+      continue
+    }
+    if (omitindo) {
+      if (!ehTituloMarkdown(linha)) continue
+      omitindo = false
+    }
+    mantidas.push(linha)
+  }
+  return mantidas.join('\n')
+}
+
+// Tira colchetes de campos não preenchidos e descarta as linhas que ficariam sem conteúdo.
+function removeColchetes(texto) {
+  return texto.split('\n').flatMap(linha => {
+    if (!/\[[^\]\n]{0,160}\](?!\()/.test(linha)) return [linha]
+    const limpa = linha.replace(COLCHETES, '').replace(/\*\*\s*\*\*/g, '').replace(/\s+([,.;:])/g, '$1').replace(/[ \t]{2,}/g, ' ').replace(/[,;]\s*$/, '').trimEnd()
+    if (!/[\p{L}\d]/u.test(limpa) || /:$/.test(limpa)) return []
+    return [limpa]
+  }).join('\n')
+}
+
+// Ajusta títulos em caixa alta para formato de frase. Linhas comuns e nomes próprios não são alterados.
+function formatarTitulos(texto) {
+  return texto.split('\n').map(linha => {
+    const markdown = linha.match(/^(\s*#{1,6}\s+)(.+?)\s*$/)
+    if (markdown) return markdown[1] + formatoDeFrase(markdown[2])
+    const negrito = linha.match(/^(\s*\*\*)([^*]+)(\*\*\s*)$/)
+    if (negrito) return negrito[1] + formatoDeFrase(negrito[2]) + negrito[3]
+    const simples = linha.trim()
+    const maiuscula = simples !== '' && simples === simples.toLocaleUpperCase('pt-BR') && /\p{L}/u.test(simples)
+    if (maiuscula && (TITULOS_CONHECIDOS.has(simples) || TITULO_NUMERADO.test(simples))) {
+      return linha.slice(0, linha.length - linha.trimStart().length) + formatoDeFrase(simples)
+    }
+    return linha
+  }).join('\n')
+}
+
+function postProcessAnswer(texto) {
+  const original = String(texto || '')
+  const limpo = formatarTitulos(removeColchetes(removeSecoesInternas(original))).replace(/\n{3,}/g, '\n\n').trim()
+  // Se a limpeza esvaziar a resposta, mantém o texto original para não perder o conteúdo.
+  return limpo || original.trim()
+}
+
 async function generateAnswer(env, prompt, history, attachments, institutional = [], useWeb = false) {
   const references = attachments.length
     ? `\n\nArquivos anexados nesta conversa:\n${attachments.map(item => `- ${item.title} (${item.category})${item.content ? `\n${item.content.slice(0, 12000)}` : ''}`).join('\n')}`
@@ -543,6 +620,7 @@ async function handler(context) {
       const automaticWeb = /\b(pesquis\w*|busque na (internet|web)|na internet|na web|legisla\w+ vigente|jurisprud\w+|cotação|preço atual)\b/i.test(prompt)
       const useWeb = Boolean(body.web_search) || automaticWeb
       const generated = await generateAnswer(env, prompt, history, attachments, institutional, useWeb)
+      generated.text = postProcessAnswer(generated.text)
       const usedSources = [...attachments, ...institutional].map(item => ({id: item.id, title: item.title, kind: 'institutional'})).concat(generated.sources || [])
       const inserted = await env.DB.prepare("INSERT INTO chat_messages(conversation_id,role,content,sources) VALUES(?,'assistant',?,?)").bind(id, generated.text, JSON.stringify(usedSources)).run()
       const generatedTitle = conversation.title === 'Nova conversa' ? await conversationTitle(env, prompt) : conversation.title
