@@ -235,6 +235,8 @@ async function currentUser(request, env) {
 }
 
 const publicUser = user => ({...user, active: Boolean(user.active)})
+const normalizeEmail = value => String(value || '').trim().toLowerCase()
+const validEmail = email => email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
 const TITLE_MAX_WORDS = 4
 const AUTO_TITLE_MAX_WORDS = 8
 const USER_TITLE_MAX_LENGTH = 120
@@ -681,8 +683,8 @@ async function handler(context) {
       return json({access_token: token, token_type: 'bearer', user: publicUser(safeUser)}, 200, {'set-cookie': sessionCookie(token, SESSION_MAX_AGE)})
     }
     if (path === '/auth/register' && method === 'POST') {
-      const email = String(body.email || '').trim().toLowerCase()
-      if (!/@soph\.ro\.gov\.br$/i.test(email)) return fail('Use um e-mail institucional da SOPH.')
+      const email = normalizeEmail(body.email)
+      if (!validEmail(email)) return fail('Informe um e-mail válido.')
       if (!strongPassword(body.password)) return fail(PASSWORD_RULE)
       const sector = await env.DB.prepare('SELECT id FROM sectors WHERE lower(name)=lower(?)').bind(body.sector || '').first()
       if (!sector) return fail('Setor inválido.')
@@ -823,9 +825,11 @@ async function handler(context) {
       const role = body.role || 'padrao'
       if (!ROLES.includes(role)) return fail('Perfil inválido.')
       if (PRIVILEGED_ROLES.includes(role) && user.role !== 'admin') return fail('Apenas administradores podem criar contas administrativas.', 403)
+      const email = normalizeEmail(body.email)
+      if (!validEmail(email)) return fail('Informe um e-mail válido.')
       if (!strongPassword(body.password)) return fail(PASSWORD_RULE)
       try {
-        const result = await env.DB.prepare('INSERT INTO users(name,email,password_hash,role,sector_id) VALUES(?,?,?,?,?)').bind(body.name, String(body.email || '').toLowerCase(), await passwordHash(body.password), role, body.sector_id || null).run()
+        const result = await env.DB.prepare('INSERT INTO users(name,email,password_hash,role,sector_id) VALUES(?,?,?,?,?)').bind(body.name, email, await passwordHash(body.password), role, body.sector_id || null).run()
         return json(await env.DB.prepare('SELECT id,name,email,role,active,sector_id FROM users WHERE id=?').bind(result.meta.last_row_id).first(), 201)
       } catch { return fail('Não foi possível criar o usuário; verifique se o e-mail já existe.', 409) }
     }
@@ -835,6 +839,12 @@ async function handler(context) {
       const target = Number(match[1])
       const managed = await loadManagedUser(env, user, target)
       if (managed.error) return fail(managed.error.message, managed.error.status)
+      if (body.email !== undefined) {
+        const email = normalizeEmail(body.email)
+        if (!validEmail(email)) return fail('Informe um e-mail válido.')
+        const taken = await env.DB.prepare('SELECT id FROM users WHERE lower(email)=lower(?) AND id<>?').bind(email, target).first()
+        if (taken) return fail('Já existe um usuário com esse e-mail.', 409)
+      }
       const changesRole = body.role !== undefined
       const deactivates = body.active !== undefined && !body.active
       if (changesRole) {
@@ -843,6 +853,10 @@ async function handler(context) {
       }
       if (target === user.id && ((changesRole && body.role !== user.role) || deactivates)) return fail('Você não pode alterar o próprio perfil nem desativar a própria conta.', 403)
       if (await removesLastAdmin(env, managed.row, changesRole ? body.role : null, deactivates)) return fail('Não é possível remover o último administrador ativo.', 409)
+      if (body.email !== undefined) {
+        try { await env.DB.prepare('UPDATE users SET email=? WHERE id=?').bind(normalizeEmail(body.email), target).run() }
+        catch { return fail('Já existe um usuário com esse e-mail.', 409) }
+      }
       if (changesRole) await env.DB.prepare('UPDATE users SET role=? WHERE id=?').bind(body.role, target).run()
       if (body.sector_id !== undefined) await env.DB.prepare('UPDATE users SET sector_id=? WHERE id=?').bind(body.sector_id || null, target).run()
       if (body.active !== undefined) await env.DB.prepare('UPDATE users SET active=? WHERE id=?').bind(body.active ? 1 : 0, target).run()

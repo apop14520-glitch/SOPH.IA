@@ -53,6 +53,10 @@ export function createDb(initialUsers) {
 
   function query(sql, args) {
     if (/SELECT COUNT\(\*\) count FROM users/.test(sql)) return {count: users.length}
+    if (/^SELECT id FROM users WHERE lower\(email\)=lower\(\?\) AND id<>\?$/.test(sql)) {
+      const user = users.find(item => item.email === String(args[0]).toLowerCase() && item.id !== args[1])
+      return user ? {id: user.id} : null
+    }
     if (/WHERE u\.id=\? AND u\.active=1/.test(sql)) {
       const user = users.find(item => item.id === args[0] && item.active)
       return user ? {...user, sector_name: null} : null
@@ -106,6 +110,11 @@ export function createDb(initialUsers) {
       const row = {id: nextId++, name, email, password_hash, role, active: 1, sector_id}
       users.push(row)
       return {meta: {last_row_id: row.id, changes: 1}}
+    }
+    if (/^UPDATE users SET email=\? WHERE id=\?$/.test(sql)) {
+      const user = users.find(item => item.id === args[1])
+      if (user) user.email = String(args[0]).toLowerCase()
+      return {meta: {changes: user ? 1 : 0}}
     }
     const update = sql.match(/^UPDATE users SET (role|sector_id|active|password_hash)=\? WHERE id=\?$/)
     if (update) {
