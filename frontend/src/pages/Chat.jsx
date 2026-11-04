@@ -1,6 +1,8 @@
 import React,{useEffect,useRef,useState} from 'react'
 import {Alert,Avatar,Box,Card,Chip,CircularProgress,IconButton,Paper,TextField,Tooltip,Typography} from '@mui/material'
 import {Add,AutoAwesome,Check,ContentCopy,Description,Download,ImageOutlined,Language,OpenInNew,Send} from '@mui/icons-material'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import {DOCX_MIME,buildDocx} from '../docx'
 import {useNavigate,useParams} from 'react-router-dom'
 import {api,errorMessage} from '../api'
@@ -46,10 +48,9 @@ function cleanInstitutionalText(value=''){
   .trim()
 }
 function ReadableText({children}){
- const lines=cleanInstitutionalText(children).split('\n'),blocks=[];let bullets=[]
- const inline=(value,key='inline')=>value.split(/(\*\*.+?\*\*)/g).map((part,i)=>part.startsWith('**')&&part.endsWith('**')?<Box component="strong" key={`${key}-${i}`} sx={{fontWeight:750}}>{part.slice(2,-2)}</Box>:part)
- const flush=()=>{if(bullets.length){blocks.push(<Box component="ul" key={`ul-${blocks.length}`} sx={{my:1.1,pl:3}}>{bullets.map((item,i)=><Box component="li" key={i} sx={{mb:.5,lineHeight:1.65}}>{inline(item,`bullet-${i}`)}</Box>)}</Box>);bullets=[]}}
- lines.forEach((raw,index)=>{const line=raw.trim();if(!line){flush();return}if(/^[-•]\s+/.test(line)){bullets.push(line.replace(/^[-•]\s+/,''));return}flush();if(/^(-{3,}|_{3,}|\*{3,})$/.test(line))blocks.push(<Box component="hr" key={index} sx={{border:0,borderTop:'1px solid',borderColor:'divider',my:2.4}}/>);else if(/^##\s+/.test(line))blocks.push(<Typography key={index} component="h2" sx={{fontSize:16,fontWeight:800,lineHeight:1.4,mt:index?2.4:0,mb:1}}>{inline(line.replace(/^##\s+/,''),`h2-${index}`)}</Typography>);else if(/^###\s+/.test(line))blocks.push(<Typography key={index} component="h3" sx={{fontSize:14,fontWeight:800,lineHeight:1.45,mt:1.9,mb:.65}}>{inline(line.replace(/^###\s+/,''),`h3-${index}`)}</Typography>);else if(/^[A-ZÁÉÍÓÚÇ][A-ZÁÉÍÓÚÇ\s"()]{5,}$/.test(line)&&line.length<100)blocks.push(<Typography key={index} fontWeight={800} sx={{fontSize:14,mt:2.1,mb:.8}}>{line}</Typography>);else blocks.push(<Typography key={index} component="p" sx={{fontSize:14,lineHeight:1.72,mb:1.05,letterSpacing:0,textAlign:'left'}}>{inline(line,`p-${index}`)}</Typography>)});flush();return <Box>{blocks}</Box>
+ return <Box sx={{textAlign:'justify',hyphens:'auto',lineHeight:1.65,'& p':{my:1},'& h1, & h2':{fontSize:16,fontWeight:800,lineHeight:1.4,mt:2.4,mb:1,textAlign:'left'},'& h3, & h4':{fontSize:14,fontWeight:800,lineHeight:1.45,mt:1.9,mb:.65,textAlign:'left'},'& ul, & ol':{my:1,pl:3},'& li':{mb:.5},'& hr':{border:0,borderTop:'1px solid',borderColor:'divider',my:2.4},'& strong':{fontWeight:750},'& table':{display:'block',overflowX:'auto',maxWidth:'100%',borderCollapse:'collapse',my:1.5,fontSize:14,textAlign:'left'},'& th, & td':{border:'1px solid',borderColor:'divider',px:1,py:.6,verticalAlign:'top'},'& th':{fontWeight:700,bgcolor:'action.hover'},'& blockquote':{m:0,pl:2,borderLeft:'3px solid',borderColor:'divider',color:'text.secondary'},'& code':{fontFamily:'monospace',fontSize:13}}}>
+  <ReactMarkdown remarkPlugins={[remarkGfm]}>{cleanInstitutionalText(children)}</ReactMarkdown>
+ </Box>
 }
 export default function Chat(){
  const {id}=useParams(),nav=useNavigate(),bottom=useRef(null)
