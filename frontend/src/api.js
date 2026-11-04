@@ -1,9 +1,8 @@
 import axios from 'axios'
 
-// Usa o mesmo endereço pelo qual o usuário abriu a SOPH.IA. Em
-// desenvolvimento, o Vite encaminha /api ao backend local; em produção,
-// o proxy web faz o mesmo. Assim, computadores da rede não tentam acessar
-// o próprio "localhost".
+// Usa o mesmo endereço pelo qual o usuário abriu a SOPH.IA. Em produção, a
+// própria publicação do Cloudflare Pages atende /api. Em desenvolvimento, o
+// Vite encaminha /api às Pages Functions locais (ver README).
 export const api = axios.create({baseURL: import.meta.env.VITE_API_URL || '/api'})
 api.interceptors.request.use(config => {
   const token = localStorage.getItem('sophia_token')
@@ -24,7 +23,7 @@ api.interceptors.response.use(response => {
       config: response.config,
       response: {
         status: 503,
-        data: {detail: 'O servidor da SOPH.IA não está conectado. Configure VITE_API_URL com o endereço público do backend FastAPI.'},
+        data: {detail: 'A API da SOPH.IA não respondeu. Verifique a publicação das Pages Functions no Cloudflare.'},
       },
     })
   }
