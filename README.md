@@ -101,13 +101,19 @@ envia ao modelo apenas os trechos pertinentes e mostra as páginas utilizadas em
 temporariamente indisponível, o chat continua com a base institucional sem
 inserir mensagens técnicas no documento gerado.
 
-### Limitação atual de leitura de arquivos
+### Leitura de arquivos
 
-PDF e DOCX são guardados e podem ser visualizados ou baixados pelo R2. Arquivos
-TXT, Markdown e CSV também têm o texto incorporado diretamente ao contexto. A
-extração completa de PDF/DOCX no ambiente Cloudflare deve ser adicionada em uma
-segunda etapa com pipeline de extração ou AI Search; o sistema não afirma ter
-lido conteúdo que ainda não foi extraído.
+PDF e DOCX são guardados no R2 e convertidos para texto com `env.AI.toMarkdown()`
+(Workers AI) no envio. O texto fica salvo junto do documento e entra na busca de
+fontes do chat. TXT, Markdown e CSV são lidos diretamente.
+
+- Se a conversão não extrair texto, o envio é recusado com uma mensagem. Isso
+  acontece com PDF protegido, corrompido ou digitalizado só como imagem.
+- Documentos enviados antes dessa etapa não têm texto salvo. Eles podem ser
+  convertidos em **Administração > Base institucional > Reprocessar textos**.
+- Arquivos `.pptx` não são convertidos.
+- A conversão é gratuita para a maioria dos formatos; imagens usam modelos de IA
+  e consomem a cota de Neurons.
 
 ## Desenvolvimento local
 

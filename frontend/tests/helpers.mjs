@@ -50,6 +50,8 @@ export function createDb(initialUsers) {
   const chatMessages = []
   let nextId = Math.max(...users.map(user => user.id)) + 1
   let nextMessageId = 1
+  const knowledge = []
+  let nextKnowledgeId = 1
 
   function query(sql, args) {
     if (/SELECT COUNT\(\*\) count FROM users/.test(sql)) return {count: users.length}
@@ -89,6 +91,10 @@ export function createDb(initialUsers) {
       return row ? {id: row.id, user_id: row.user_id} : null
     }
     if (/FROM settings WHERE key=\?/.test(sql)) return null
+    if (/^SELECT id,title,category,filename,mime_type,created_at FROM knowledge WHERE id=\?$/.test(sql)) {
+      const row = knowledge.find(item => item.id === args[0])
+      return row ? {...row} : null
+    }
     if (/^SELECT \* FROM conversations WHERE id=\? AND user_id=\?$/.test(sql)) {
       const conversation = conversations.find(item => item.id === args[0] && item.user_id === args[1])
       return conversation ? {...conversation} : null
@@ -136,6 +142,17 @@ export function createDb(initialUsers) {
       loginAttempts.delete(args[0])
       return {meta: {changes: 1}}
     }
+    if (/^INSERT INTO knowledge\(title,category,filename,mime_type,storage_key,content,owner_id\)/.test(sql)) {
+      const [title, category, filename, mime_type, storage_key, content, owner_id] = args
+      const row = {id: nextKnowledgeId++, title, category, filename, mime_type, storage_key, content, owner_id, created_at: '2026-11-04'}
+      knowledge.push(row)
+      return {meta: {last_row_id: row.id, changes: 1}}
+    }
+    if (/^UPDATE knowledge SET content=\? WHERE id=\?$/.test(sql)) {
+      const row = knowledge.find(item => item.id === args[1])
+      if (row) row.content = args[0]
+      return {meta: {changes: row ? 1 : 0}}
+    }
     if (/^INSERT INTO chat_messages/.test(sql)) {
       const role = sql.includes("'assistant'") ? 'assistant' : 'user'
       const row = {id: nextMessageId++, conversation_id: args[0], role, content: args[1], sources: '[]'}
@@ -166,6 +183,7 @@ export function createDb(initialUsers) {
     conversations,
     passwordResets,
     chatMessages,
+    knowledge,
     prepare(sql) {
       return {
         sql,
@@ -184,6 +202,11 @@ export function createDb(initialUsers) {
                 updated_at: item.updated_at ?? null,
                 first_prompt: chatMessages.find(message => message.conversation_id === item.id && message.role === 'user')?.content ?? null,
               }))}
+          }
+          if (/FROM knowledge WHERE category != \? AND content = ''/.test(this.sql)) {
+            return {results: knowledge
+              .filter(item => item.category !== this.args[0] && item.content === '' && item.storage_key != null)
+              .map(({id, filename, mime_type, storage_key}) => ({id, filename, mime_type, storage_key}))}
           }
           return {results: []}
         },
