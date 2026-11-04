@@ -146,14 +146,83 @@ const RESET_TTL_SECONDS = 30 * 60
 const RESET_LIMITS = {email: 5, ip: 20}
 const sha256Hex = async value => [...new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(value)))].map(byte => byte.toString(16).padStart(2, '0')).join('')
 const randomResetToken = () => base64url(crypto.getRandomValues(new Uint8Array(32)))
-const mailConfigured = env => Boolean(env.SEND_EMAIL || (env.RESEND_API_KEY && env.MAIL_FROM))
-// Envio pelo Resend (https://resend.com). Testes usam env.SEND_EMAIL no lugar.
+const mailConfigured = env => Boolean(env.SEND_EMAIL || (env.SMTP_USER && env.SMTP_PASS && env.MAIL_FROM) || (env.RESEND_API_KEY && env.MAIL_FROM))
+// Envio do link de redefinição. Ordem: SMTP (Gmail com senha de app), depois Resend. Testes usam env.SEND_EMAIL.
+const base64Utf8 = text => btoa(String.fromCharCode(...new TextEncoder().encode(text)))
+const smtpBase64Lines = text => base64Utf8(text).match(/.{1,76}/g).join('\r\n')
+// Conversa SMTP: lê respostas completas (inclusive as de várias linhas, "250-...") e envia comandos.
+function smtpSession(socket) {
+  const reader = socket.readable.getReader()
+  const writer = socket.writable.getWriter()
+  const decoder = new TextDecoder()
+  const encoder = new TextEncoder()
+  let buffer = ''
+  const reply = async () => {
+    for (;;) {
+      const lines = buffer.split('\r\n')
+      for (let i = 0; i < lines.length - 1; i++) {
+        if (/^\d{3} /.test(lines[i])) {
+          const text = lines.slice(0, i + 1).join('\n')
+          buffer = lines.slice(i + 1).join('\r\n')
+          return text
+        }
+      }
+      const {value, done} = await reader.read()
+      if (done) throw new Error('conexão SMTP encerrada pelo servidor')
+      buffer += decoder.decode(value, {stream: true})
+    }
+  }
+  return {
+    reply,
+    send: data => writer.write(encoder.encode(data)),
+    command: async line => { await writer.write(encoder.encode(`${line}\r\n`)); return reply() },
+    close: async () => { try { await writer.close() } catch {} },
+  }
+}
+// Gmail (smtp.gmail.com, porta 465) com senha de app. Sem dependências: usa o conector TCP do Workers.
+async function sendSmtpMail(env, to, subject, html) {
+  const connect = env.SMTP_CONNECT || (await import('cloudflare:sockets')).connect
+  const socket = connect({hostname: env.SMTP_HOST || 'smtp.gmail.com', port: Number(env.SMTP_PORT || 465)}, {secureTransport: 'on', allowHalfOpen: false})
+  const smtp = smtpSession(socket)
+  const expect = (text, code) => { if (!String(text).startsWith(code)) throw new Error(`SMTP recusou: ${String(text).slice(0, 80)}`) }
+  try {
+    expect(await smtp.reply(), '220')
+    expect(await smtp.command('EHLO soph.ro.gov.br'), '250')
+    expect(await smtp.command(`AUTH PLAIN ${btoa(`\u0000${env.SMTP_USER}\u0000${env.SMTP_PASS}`)}`), '235')
+    const sender = (String(env.MAIL_FROM).match(/<([^>]+)>/) || [])[1] || env.MAIL_FROM
+    expect(await smtp.command(`MAIL FROM:<${sender}>`), '250')
+    expect(await smtp.command(`RCPT TO:<${to}>`), '250')
+    expect(await smtp.command('DATA'), '354')
+    const message = [
+      `From: ${env.MAIL_FROM}`,
+      `To: ${to}`,
+      `Subject: =?UTF-8?B?${base64Utf8(subject)}?=`,
+      `Date: ${new Date().toUTCString()}`,
+      `Message-ID: <${crypto.randomUUID()}@${sender.split('@')[1] || 'soph.ro.gov.br'}>`,
+      'MIME-Version: 1.0',
+      'Content-Type: text/html; charset=UTF-8',
+      'Content-Transfer-Encoding: base64',
+      '',
+      smtpBase64Lines(html),
+      '.',
+      '',
+    ].join('\r\n')
+    await smtp.send(message)
+    expect(await smtp.reply(), '250')
+    await smtp.command('QUIT').catch(() => {})
+  } finally {
+    await smtp.close()
+  }
+}
 async function sendResetEmail(env, to, link) {
   if (env.SEND_EMAIL) return env.SEND_EMAIL(to, link)
+  const subject = 'Redefinição de senha da SOPH.IA'
+  const html = `<p>Recebemos um pedido para redefinir a senha da sua conta na SOPH.IA.</p><p><a href="${link}">Criar nova senha</a></p><p>O link vale por 30 minutos e só pode ser usado uma vez. Se você não fez esse pedido, ignore este e-mail.</p>`
+  if (env.SMTP_USER && env.SMTP_PASS) return sendSmtpMail(env, to, subject, html)
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {authorization: `Bearer ${env.RESEND_API_KEY}`, 'content-type': 'application/json'},
-    body: JSON.stringify({from: env.MAIL_FROM, to: [to], subject: 'Redefinição de senha da SOPH.IA', html: `<p>Recebemos um pedido para redefinir a senha da sua conta na SOPH.IA.</p><p><a href="${link}">Criar nova senha</a></p><p>O link vale por 30 minutos e só pode ser usado uma vez. Se você não fez esse pedido, ignore este e-mail.</p>`}),
+    body: JSON.stringify({from: env.MAIL_FROM, to: [to], subject, html}),
   })
   if (!res.ok) throw new Error(`envio recusado (${res.status})`)
 }
@@ -166,6 +235,8 @@ async function currentUser(request, env) {
 }
 
 const publicUser = user => ({...user, active: Boolean(user.active)})
+const normalizeEmail = value => String(value || '').trim().toLowerCase()
+const validEmail = email => email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
 const TITLE_MAX_WORDS = 4
 const AUTO_TITLE_MAX_WORDS = 8
 const USER_TITLE_MAX_LENGTH = 120
@@ -601,25 +672,29 @@ async function handler(context) {
       const now = Math.floor(Date.now() / 1000)
       if (await loginBlockedUntil(env, [emailKey, ipKey], now)) return fail('Muitas tentativas de acesso. Aguarde alguns minutos e tente novamente.', 429)
       const user = await env.DB.prepare('SELECT u.*,s.name sector_name FROM users u LEFT JOIN sectors s ON s.id=u.sector_id WHERE lower(u.email)=lower(?)').bind(body.email || '').first()
-      if (!user || !user.active || !await passwordValid(body.password || '', user.password_hash)) {
+      const passwordOk = Boolean(user) && await passwordValid(body.password || '', user.password_hash)
+      if (!passwordOk) {
         await recordLoginFailure(env, emailKey, LOGIN_LIMITS.email, now)
         await recordLoginFailure(env, ipKey, LOGIN_LIMITS.ip, now)
         return fail('E-mail ou senha inválidos.', 401)
       }
+      // Só com a senha correta a pessoa recebe o aviso: assim o aviso não revela contas existentes.
+      if (!user.active) return fail('Conta inativa. Peça à administração da SOPH.IA para ativá-la.', 403)
       await env.DB.prepare('DELETE FROM login_attempts WHERE key=?').bind(emailKey).run()
       const {password_hash: _hash, ...safeUser} = user
       const token = await createToken(env, user)
       return json({access_token: token, token_type: 'bearer', user: publicUser(safeUser)}, 200, {'set-cookie': sessionCookie(token, SESSION_MAX_AGE)})
     }
     if (path === '/auth/register' && method === 'POST') {
-      const email = String(body.email || '').trim().toLowerCase()
-      if (!/@soph\.ro\.gov\.br$/i.test(email)) return fail('Use um e-mail institucional da SOPH.')
+      const email = normalizeEmail(body.email)
+      if (!validEmail(email)) return fail('Informe um e-mail válido.')
       if (!strongPassword(body.password)) return fail(PASSWORD_RULE)
       const sector = await env.DB.prepare('SELECT id FROM sectors WHERE lower(name)=lower(?)').bind(body.sector || '').first()
       if (!sector) return fail('Setor inválido.')
       try {
-        await env.DB.prepare("INSERT INTO users(name,email,password_hash,role,sector_id) VALUES(?,?,?,?,?)").bind(body.name, email, await passwordHash(body.password), 'padrao', sector.id).run()
-        return json({message: 'Cadastro concluído.'}, 201)
+        // Cadastro público entra inativo: a administração ativa a conta antes do primeiro acesso.
+        await env.DB.prepare("INSERT INTO users(name,email,password_hash,role,sector_id,active) VALUES(?,?,?,?,?,?)").bind(body.name, email, await passwordHash(body.password), 'padrao', sector.id, 0).run()
+        return json({message: 'Cadastro recebido. A administração da SOPH.IA precisa ativar sua conta antes do primeiro acesso.'}, 201)
       } catch { return fail('Já existe um usuário com esse e-mail.', 409) }
     }
 
@@ -754,9 +829,11 @@ async function handler(context) {
       const role = body.role || 'padrao'
       if (!ROLES.includes(role)) return fail('Perfil inválido.')
       if (PRIVILEGED_ROLES.includes(role) && user.role !== 'admin') return fail('Apenas administradores podem criar contas administrativas.', 403)
+      const email = normalizeEmail(body.email)
+      if (!validEmail(email)) return fail('Informe um e-mail válido.')
       if (!strongPassword(body.password)) return fail(PASSWORD_RULE)
       try {
-        const result = await env.DB.prepare('INSERT INTO users(name,email,password_hash,role,sector_id) VALUES(?,?,?,?,?)').bind(body.name, String(body.email || '').toLowerCase(), await passwordHash(body.password), role, body.sector_id || null).run()
+        const result = await env.DB.prepare('INSERT INTO users(name,email,password_hash,role,sector_id) VALUES(?,?,?,?,?)').bind(body.name, email, await passwordHash(body.password), role, body.sector_id || null).run()
         return json(await env.DB.prepare('SELECT id,name,email,role,active,sector_id FROM users WHERE id=?').bind(result.meta.last_row_id).first(), 201)
       } catch { return fail('Não foi possível criar o usuário; verifique se o e-mail já existe.', 409) }
     }
@@ -766,6 +843,12 @@ async function handler(context) {
       const target = Number(match[1])
       const managed = await loadManagedUser(env, user, target)
       if (managed.error) return fail(managed.error.message, managed.error.status)
+      if (body.email !== undefined) {
+        const email = normalizeEmail(body.email)
+        if (!validEmail(email)) return fail('Informe um e-mail válido.')
+        const taken = await env.DB.prepare('SELECT id FROM users WHERE lower(email)=lower(?) AND id<>?').bind(email, target).first()
+        if (taken) return fail('Já existe um usuário com esse e-mail.', 409)
+      }
       const changesRole = body.role !== undefined
       const deactivates = body.active !== undefined && !body.active
       if (changesRole) {
@@ -774,6 +857,10 @@ async function handler(context) {
       }
       if (target === user.id && ((changesRole && body.role !== user.role) || deactivates)) return fail('Você não pode alterar o próprio perfil nem desativar a própria conta.', 403)
       if (await removesLastAdmin(env, managed.row, changesRole ? body.role : null, deactivates)) return fail('Não é possível remover o último administrador ativo.', 409)
+      if (body.email !== undefined) {
+        try { await env.DB.prepare('UPDATE users SET email=? WHERE id=?').bind(normalizeEmail(body.email), target).run() }
+        catch { return fail('Já existe um usuário com esse e-mail.', 409) }
+      }
       if (changesRole) await env.DB.prepare('UPDATE users SET role=? WHERE id=?').bind(body.role, target).run()
       if (body.sector_id !== undefined) await env.DB.prepare('UPDATE users SET sector_id=? WHERE id=?').bind(body.sector_id || null, target).run()
       if (body.active !== undefined) await env.DB.prepare('UPDATE users SET active=? WHERE id=?').bind(body.active ? 1 : 0, target).run()
