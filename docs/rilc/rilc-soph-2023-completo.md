@@ -950,7 +950,11 @@ VI- Aos documentos exigidos pelo setor requisitante, quando for o caso. (Alterad
 
 §3° - A SOPH, nas compras para entrega futura e na execução de obras e serviços, poderá estabelecer, no instrumento convocatório, a exigência patrimônio líquido mínimo, como dado objetivo de comprovação da qualificação econômico financeira dos licitantes e para efeito de garantia ao adimplemento do contrato a ser ulteriormente celebrado.
 
-§4° - O valor do patrimônio líquido a que se refere o §3° não poderá exceder a 20% (vinte por cento) do valor estimado da contratação, devendo a comprovação ser feita relativamente à data da apresentação da proposta, na forma da lei, admitida a atualização por índices oficiais. Da Regularidade Fiscal
+§4° - O valor do patrimônio líquido a que se refere o §3° não poderá exceder a 20% (vinte por cento) do valor estimado da contratação, devendo a comprovação ser feita relativamente à data da apresentação da proposta, na forma da lei, admitida a atualização por índices oficiais.
+
+
+## CAPÍTULO IV — DAS FASES DO PROCEDIMENTO LICITATÓRIO
+### Da Regularidade Fiscal
 
 **Art. 48.** A documentação relativa à regularidade fiscal consistirá em:
 
@@ -1100,7 +1104,11 @@ IV - Não criar por si só qualquer direito ao ressarcimento dos valores envolvi
 
 V - ser pessoal e intransferível.
 
-§3° - O termo de autorização para a realização de projetos, estudos, levantamentos ou investigações não implica, em hipótese alguma, corresponsabilidade da SOPH perante terceiros pelos atos praticados pela pessoa autorizada. Da Fase de Julgamento
+§3° - O termo de autorização para a realização de projetos, estudos, levantamentos ou investigações não implica, em hipótese alguma, corresponsabilidade da SOPH perante terceiros pelos atos praticados pela pessoa autorizada.
+
+
+## CAPÍTULO IV — DAS FASES DO PROCEDIMENTO LICITATÓRIO
+### Da Fase de Julgamento
 
 **Art. 63.** As propostas apresentadas devem ser julgadas com base nos seguintes critérios:
 
@@ -1170,7 +1178,11 @@ V - Apresentem desconformidade com outras exigências do instrumento convocatór
 
 I - Média aritmética dos valores das propostas superiores a 50% (cinquenta por cento) do valor do orçamento estimado; ou
 
-II - Valor do orçamento estimado. Critério de desempate
+II - Valor do orçamento estimado.
+
+
+## CAPÍTULO IV — DAS FASES DO PROCEDIMENTO LICITATÓRIO
+### Critério de desempate
 
 **Art. 70.** Em caso de empate entre 2 (duas) ou mais propostas, devem ser utilizados os seguintes critérios de desempate, nesta ordem:
 
@@ -1518,7 +1530,11 @@ XVII - Quando a operação envolver subsidiárias, controladas ou sociedades de 
 
 §1º - Considera-se de notória especialização o profissional ou sociedade cujo conceito no campo de sua especialidade, decorrente de desempenho anterior, estudos, experiências, publicações, organização, aparelhamento, equipe técnica, ou de outros requisitos relacionados com suas atividades, permita inferir que seu trabalho é adequado à plena satisfação do objeto do contrato.
 
-§2° - Considera-se como produtor, sociedade ou representante comercial exclusivo, aquele que seja o único a explorar, legalmente, a atividade no local da execução ou no território nacional, conforme seja a abrangência territorial da contratação, devendo a comprovação de exclusividade ser feita através de atestado fornecido pelo órgão de registro do comércio local em que se realizaria a licitação, ou a obra, ou serviço, pelo sindicado, federação ou confederação patronal, ou, ainda, pelas entidades equivalentes. Das Disposições Gerais
+§2° - Considera-se como produtor, sociedade ou representante comercial exclusivo, aquele que seja o único a explorar, legalmente, a atividade no local da execução ou no território nacional, conforme seja a abrangência territorial da contratação, devendo a comprovação de exclusividade ser feita através de atestado fornecido pelo órgão de registro do comércio local em que se realizaria a licitação, ou a obra, ou serviço, pelo sindicado, federação ou confederação patronal, ou, ainda, pelas entidades equivalentes.
+
+
+## CAPÍTULO VI — DA CONTRATAÇÃO DIRETA
+### Das Disposições Gerais
 
 **Art. 89.** Os processos de dispensa e de inexigibilidade de licitação deverão ser instruídos, especialmente, com os seguintes documentos: (Alterado, Rev.1)
 
@@ -1654,7 +1670,11 @@ XXI - A estipulação que assegure à SOPH o direito de, mediante retenção de 
 
 §2° - Para eventos supervenientes alocados na matriz de risco como de responsabilidade da contratada, é vedada a celebração de aditivos que alterem essa condição.
 
-§3° - Os contratos de que trata este RILC, poderão conter cláusula para solução amigável de controvérsias, incluindo a mediação e a arbitragem. Da Publicidade das Contratações
+§3° - Os contratos de que trata este RILC, poderão conter cláusula para solução amigável de controvérsias, incluindo a mediação e a arbitragem.
+
+
+## CAPÍTULO VII — DA CONTRATAÇÃO
+### Da Publicidade das Contratações
 
 **Art. 100.** O extrato dos termos contratuais e de seus correspondentes aditamentos devem ser publicados no Diário Oficial do Estado de Rondônia e em sítio eletrônico da SOPH.
 
@@ -1874,7 +1894,11 @@ II - planilha de custos demonstrando a equação inicial do contrato; e (Incluí
 
 III - planilha de custos demonstrando a equação atual do contrato, a qual deverá demonstrar a variação do preço, levando em consideração o índice de reajuste pré-fixado no instrumento convocatório e no contrato. (Incluído, Rev.1)
 
-§ 1° Os reajustes a que o contratado fizer jus e que não forem solicitados durante a vigência do contrato serão objeto de preclusão com a assinatura da prorrogação contratual ou com o encerramento do contrato, salvo se, no caso de prorrogação contratual, constar cláusula específica resguardando o direito do contratado. (Incluído, Rev.1) Da Repactuação dos Contratos
+§ 1° Os reajustes a que o contratado fizer jus e que não forem solicitados durante a vigência do contrato serão objeto de preclusão com a assinatura da prorrogação contratual ou com o encerramento do contrato, salvo se, no caso de prorrogação contratual, constar cláusula específica resguardando o direito do contratado. (Incluído, Rev.1)
+
+
+## CAPÍTULO VII — DA CONTRATAÇÃO
+### Da Repactuação dos Contratos
 
 **Art. 119.** A repactuação de contrato é uma forma de manutenção do equilíbrio econômico-financeiro do contrato que deve ser utilizada para serviços continuados com dedicação exclusiva da mão de obra, por meio da análise da variação dos custos contratuais, devendo estar prevista no instrumento convocatório com data vinculada à apresentação das propostas, para os custos decorrentes do mercado, e com data vinculada ao acordo ou à convenção coletiva ao qual o orçamento esteja vinculado, para os custos decorrentes da mão de obra.
 
@@ -1964,7 +1988,11 @@ V - a disponibilidade orçamentária do órgão ou entidade contratante. (Inclu�
 
 § 7° As repactuações a que o contratado fizer jus e que não forem solicitadas durante a vigência do contrato serão objeto de preclusão com a assinatura da prorrogação contratual ou com o encerramento do contrato, salvo se, no caso de prorrogação contratual, constar cláusula específica resguardando o direito do contratado. (Incluído, Rev.1)
 
-§8º As repactuações poderão ser formalizadas por meio de apostilamento, exceto quando coincidirem com a prorrogação contratual, em que deverão ser formalizadas por termo aditivo. (Incluído, Rev.1) Disposições Gerais sobre o Reajuste e a Repactuação
+§8º As repactuações poderão ser formalizadas por meio de apostilamento, exceto quando coincidirem com a prorrogação contratual, em que deverão ser formalizadas por termo aditivo. (Incluído, Rev.1)
+
+
+## CAPÍTULO VII — DA CONTRATAÇÃO
+### Disposições Gerais sobre o Reajuste e a Repactuação
 
 **Art. 126.** O pedido de reajuste ou repactuação deverá ser apresentado pela contratada no prazo máximo de 30 (trinta) dias, contados do fato gerador de seu direito. (Incluído, Rev.1)
 
@@ -1973,6 +2001,10 @@ V - a disponibilidade orçamentária do órgão ou entidade contratante. (Inclu�
 § 2° No caso de reajuste, desde que obedecido o prazo previsto no caput, os efeitos financeiros retroagirão à data de ocorrência do fato gerador. (Incluído, Rev.1)
 
 § 3° Caso o pedido de reajuste ou repactuação seja feito fora do prazo previsto no caput, os efeitos financeiros serão contados a partir da data de recebimento do pedido pela contratante, sendo vedado ao ordenador de despesa conceder efeito retroativo aos efeitos financeiros. (Incluído, Rev.1) Da Revisão de Contratos ou Reequilíbrio Econômico-Financeiro em Sentido Estrito
+
+
+## CAPÍTULO VII — DA CONTRATAÇÃO
+### Da Revisão de Contratos ou Reequilíbrio Econômico-Financeiro em Sentido Estrito
 
 **Art. 127.** Revisão ou reequilíbrio econômico-financeiro em sentido estrito é decorrência da teoria da imprevisão, tendo lugar quando a interferência causadora do desequilíbrio econômico-financeiro, consistir em um fato imprevisível ou previsível de consequências incalculáveis, anormal e extraordinário.
 

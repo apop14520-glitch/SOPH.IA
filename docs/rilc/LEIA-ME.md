@@ -4,3 +4,7 @@
 - `mapa-art29-rilc-soph-ia.md`: mapa do art. 29 (fase de preparação) para os campos de ETP e TR.
 
 Para a Biblioteca institucional: Administração, tipo "RILC SOPH", enviar `rilc-soph-2023-completo.md` (Markdown tem o texto incorporado ao contexto).
+
+## Conferência
+
+Conferido em 04/11/2026 contra o PDF oficial: segunda extração independente comparada artigo por artigo (200 artigos; as únicas diferenças são correções de espaçamento) e leitura visual das páginas dos arts. 29 e 87. Os demais artigos não foram lidos visualmente.
