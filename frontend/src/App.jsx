@@ -13,17 +13,17 @@ export default function App(){
   const [user,setUser]=useState(null), [loading,setLoading]=useState(true)
 
   useEffect(()=>{
-    if(!localStorage.getItem('sophia_token')){setLoading(false);return}
+    localStorage.removeItem('sophia_token')
     api.get('/auth/me')
       .then(r=>setUser(r.data))
-      .catch(()=>localStorage.removeItem('sophia_token'))
+      .catch(()=>setUser(null))
       .finally(()=>setLoading(false))
   },[])
 
   if(loading) return <Box sx={{minHeight:'100dvh',display:'grid',placeItems:'center'}}><CircularProgress aria-label="Carregando"/></Box>
   if(!user) return <Routes><Route path="*" element={<Login onLogin={setUser}/>}/></Routes>
 
-  const logout=()=>{localStorage.removeItem('sophia_token');location.hash='#/';setUser(null)}
+  const logout=()=>{api.post('/auth/logout').catch(()=>{});location.hash='#/';setUser(null)}
   const canAdmin=['admin','gerente'].includes(user.role)
 
   return <Layout user={user} onLogout={logout}>

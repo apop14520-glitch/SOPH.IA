@@ -19,7 +19,6 @@ export default function Login({onLogin}){
   e.preventDefault();setError('')
   try{
    const{data}=await api.post('/auth/login',{email,password})
-   localStorage.setItem('sophia_token',data.access_token)
    onLogin(data.user)
   }catch(err){setError(errorMessage(err,'E-mail ou senha inválidos'))}
  }
