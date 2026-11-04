@@ -1,67 +1,37 @@
-# SOPH.IA — MVP documental local
+# SOPH.IA — assistente documental institucional
 
-Aplicação local para elaboração, revisão e versionamento de Despachos, Memorandos,
-Estudos Técnicos Preliminares (ETP) e Termos de Referência (TR). Não possui
-integração com SEI e não exige serviço externo.
+Aplicação para elaborar, revisar e versionar Despachos, Memorandos, Estudos
+Técnicos Preliminares (ETP) e Termos de Referência (TR). Não integra com o SEI,
+não assina documentos e não substitui a revisão de servidor competente.
+
+## Arquitetura
+
+Toda a aplicação roda na Cloudflare:
+
+- **Interface**: React + Vite em `frontend/src`, publicada no Cloudflare Pages.
+- **API**: Pages Functions em `frontend/functions/api/[[path]].js`, atendendo
+  `/api/*` no mesmo domínio.
+- **Dados**: D1 (`sophia-db`) para usuários, setores, conversas e configurações.
+- **Arquivos**: R2 (`sophia-documentos`).
+- **Geração**: Workers AI. Gemini (chave institucional, configurada na tela de
+  Inteligência Artificial) e Tavily (pesquisa web) são opcionais.
+
+O backend FastAPI, o Docker e o Ollama foram aposentados. Não há servidor próprio
+para manter.
 
 ## Recursos
 
-- autenticação JWT e perfis `admin`, `elaborador` e `revisor`;
-- cadastro de usuários e setores;
-- biblioteca institucional com upload e extração de PDF/DOCX;
-- busca textual local e indicação das fontes usadas;
-- formulários orientados para quatro tipos documentais;
-- gerador local por templates, funcional mesmo sem modelo de IA;
-- revisão assistida, histórico de versões e estados de aprovação;
-- exportação para DOCX;
-- conector opcional para Ollama, desativado por padrão;
-- SQLite para desenvolvimento e PostgreSQL no Docker Compose.
+- Login com JWT e limite de tentativas: 5 por e-mail e 50 por IP em 15 minutos.
+- Perfis padrão, diretor, gerente e administrador, com regras de permissão
+  verificadas no servidor.
+- Biblioteca institucional com upload de PDF, DOCX e textos. Anexos de conversa
+  são visíveis somente para o usuário que os enviou.
+- Chat com indicação das fontes consultadas. A pesquisa na web se limita aos
+  domínios autorizados pelo administrador.
+- Formulários para ETP, TR, Despacho e Memorando. As respostas passam por
+  pós-processamento que remove seções internas e colchetes e padroniza títulos.
 
-## Início rápido com Docker
-
-1. Copie `.env.example` para `.env`, altere `SECRET_KEY` e defina uma senha forte e exclusiva em `SEED_ADMIN_PASSWORD`.
-2. Execute:
-
-   ```bash
-   docker compose up --build
-   ```
-
-3. Acesse `http://localhost:5173`.
-4. Entre com o e-mail definido em `SEED_ADMIN_EMAIL` e a senha configurada em `SEED_ADMIN_PASSWORD`.
-
-A API e sua documentação ficam em `http://localhost:8000/docs`.
-
-> Nunca publique o arquivo `.env`. Use senhas e chaves exclusivas em cada implantação.
-
-## Execução para desenvolvimento
-
-Requer Python 3.11+ e Node.js 20+.
-
-```bash
-cd backend
-python -m venv .venv
-# Windows: .venv\Scripts\activate
-# Linux: source .venv/bin/activate
-pip install -r requirements.txt
-copy ..\.env.example ..\.env
-uvicorn app.main:app --reload
-```
-
-Em outro terminal:
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-## Publicação no Cloudflare Pages (recomendado)
-
-O frontend React e a API agora podem ser executados integralmente na
-Cloudflare. A interface é publicada pelo Pages, as rotas `/api/*` são atendidas
-por Pages Functions, os usuários e as conversas ficam no D1, os arquivos no R2
-e a geração de texto usa o Workers AI. Não é necessário manter FastAPI, Ollama
-ou uma máquina ligada para essa implantação.
+## Publicação no Cloudflare Pages
 
 ### 1. Criar os recursos no Cloudflare
 
@@ -88,8 +58,6 @@ sem expor token de API no navegador.
 
 ### 2. Configurar o build conectado ao GitHub
 
-Use estas configurações no Cloudflare Pages:
-
 ```text
 Root directory: frontend
 Build command: npm run build
@@ -108,8 +76,8 @@ https://SEU-DOMINIO.pages.dev/api/health
 ```
 
 A resposta deve informar `platform: cloudflare-pages`, `ai: true` e
-`database: true`. No primeiro acesso, as tabelas, setores e o administrador são
-criados automaticamente. `SEED_ADMIN_PASSWORD` não altera usuários que já
+`database: true`. No primeiro acesso, as tabelas, os setores e o administrador
+são criados automaticamente. `SEED_ADMIN_PASSWORD` não altera usuários que já
 existam; troque a senha pela Administração.
 
 ### 3. Publicação opcional pelo Wrangler
@@ -136,124 +104,79 @@ extração completa de PDF/DOCX no ambiente Cloudflare deve ser adicionada em um
 segunda etapa com pipeline de extração ou AI Search; o sistema não afirma ter
 lido conteúdo que ainda não foi extraído.
 
-## Aplicação integral na Netlify (legado)
+## Desenvolvimento local
 
-O arquivo `netlify.toml` compila o React e publica uma API em **Netlify
-Functions**. Autenticação, usuários, conversas e chat com Gemini deixam de
-depender de um servidor FastAPI separado.
-
-No painel do projeto `iasoph`:
-
-1. Abra **Database** e crie/ative o banco do projeto. A Netlify disponibilizará
-   `NETLIFY_DB_URL` automaticamente às Functions.
-2. Em **Project configuration > Environment variables**, cadastre:
-   - `SECRET_KEY`: valor aleatório com pelo menos 32 caracteres;
-   - `SEED_ADMIN_EMAIL`: e-mail inicial do administrador;
-   - `SEED_ADMIN_PASSWORD`: senha forte inicial;
-   - `GEMINI_API_KEY`: chave do Google AI Studio;
-   - `GEMINI_MODEL`: `gemini-2.5-flash` (opcional).
-3. Marque senhas e chaves como secretas e disponíveis para **Functions**.
-4. Execute **Deploys > Trigger deploy > Clear cache and deploy site**.
-
-A aplicação utiliza `/api` no mesmo domínio. Não configure `VITE_API_URL` como
-`localhost` na Netlify. Verifique a API em
-`https://iasoph.netlify.app/api/health`.
-
-`SEED_ADMIN_PASSWORD` só cria o administrador quando ainda não existe nenhum
-usuário. Depois do primeiro acesso, altere a senha pela Administração.
-
-Com `DATABASE_URL=sqlite:///./data/sophia.db`, o banco e as tabelas são criados
-automaticamente. O seed cria dois setores, o usuário administrador e fontes
-institucionais demonstrativas.
-
-## Ollama (opcional)
-
-O sistema começa com `AI_PROVIDER=template`, garantindo operação offline e
-resultados previsíveis. Para ativar um modelo local:
+Requer Node.js 20 ou superior. A API roda nas Pages Functions, então o
+desenvolvimento local usa o Wrangler:
 
 ```bash
-docker compose --profile ai up -d ollama
-docker compose exec ollama ollama pull qwen2.5:7b
+cd frontend
+npm install
+cp .dev.vars.example .dev.vars   # preencha os valores locais; nunca versione este arquivo
+npm run build
+npx wrangler pages dev dist --port 8788 --d1=DB --r2=DOCUMENTS
 ```
 
-Depois altere `.env`:
+Abra `http://localhost:8788`. Para editar a interface com recarregamento
+automático, rode `npm run dev` em outro terminal: o Vite (porta 5173) encaminha
+`/api` para a porta 8788.
 
-```env
-AI_PROVIDER=ollama
-OLLAMA_BASE_URL=http://ollama:11434
-OLLAMA_MODEL=qwen2.5:7b
+Os parâmetros do Wrangler dependem da versão instalada. Se algum binding não
+for reconhecido, consulte a documentação do Cloudflare para essa versão.
+
+## Testes
+
+```bash
+node --test frontend/tests/permissions.test.mjs frontend/tests/postprocess.test.mjs evals/checks.test.mjs
+cd frontend && npm run build
 ```
 
-Recrie o backend. O conector envia somente os campos preenchidos e os trechos das
-fontes locais recuperadas. Em produção, escolha um modelo compatível com o
-hardware, valide juridicamente os textos e mantenha revisão humana obrigatória.
-
-## Pesquisa controlada na internet
-
-A SOPH.IA pode pesquisar modelos e referências públicas quando não existir um
-modelo institucional adequado. Essa função não envia documentos internos à
-internet: somente a consulta textual necessária à pesquisa é encaminhada ao
-serviço configurado. Por padrão, permanece desabilitada.
-
-Configure no `.env` e reinicie o backend:
-
-```env
-WEB_SEARCH_ENABLED=true
-OLLAMA_API_KEY=sua_chave
-WEB_ALLOWED_DOMAINS=gov.br,planalto.gov.br,tcu.gov.br,cgu.gov.br,compras.gov.br,rondonia.ro.gov.br
-WEB_SEARCH_MAX_RESULTS=4
-WEB_SEARCH_TIMEOUT_SECONDS=20
-```
-
-A pesquisa somente é acionada em pedidos de elaboração documental. Resultados
-fora dos domínios autorizados, sem pertinência com o pedido ou resolvidos para
-endereços privados são descartados. Os modelos institucionais têm prioridade.
-Quando o usuário pedir reprodução exata de um padrão específico que não esteja
-na base, a SOPH.IA solicitará o documento-modelo em vez de inventar a estrutura.
+A avaliação da qualidade das respostas da IA está descrita em `evals/README.md`.
+Ela usa uma conta temporária, informada por variáveis de ambiente. Não grave
+senhas em arquivos do projeto.
 
 ## Estrutura
 
 ```text
-backend/app/
-  api/          rotas HTTP
-  core/         configuração e segurança
-  services/     documentos, extração, geração e DOCX
-  models.py     entidades persistidas
-  schemas.py    contratos da API
-frontend/src/
-  components/   layout e componentes compartilhados
-  pages/        telas do sistema
+frontend/
+  src/          interface React (telas em pages/, componentes em components/)
+  functions/    API em Pages Functions (api/[[path]].js)
+  tests/        testes de permissões e de pós-processamento
+  netlify/      implantação antiga na Netlify (legado)
+evals/          conjunto de avaliação das respostas da IA
 ```
 
 ## Fluxo recomendado
 
 1. O administrador cadastra setores, usuários, normas e modelos.
-2. O elaborador escolhe um tipo e preenche o formulário orientado.
+2. O usuário escolhe o tipo de documento e preenche o formulário orientado.
 3. A aplicação recupera fontes da biblioteca e gera a primeira versão.
 4. O revisor altera o texto; cada salvamento cria uma versão imutável.
-5. O documento é marcado como revisado/aprovado e exportado em DOCX.
 
-## Segurança e limites do MVP
+## Limitações conhecidas
 
-- O token fica no armazenamento local do navegador, adequado apenas ao MVP.
-- Arquivos são validados por extensão e limitados a 15 MB.
-- A busca inicial é textual, não vetorial. Pode ser substituída por pgvector sem
-  alterar o fluxo funcional.
-- Não há assinatura digital, protocolo, tramitação nem integração com o SEI.
-- As fontes seed são exemplos, não substituem normativos oficiais atualizados.
+- O token de sessão fica no `localStorage` do navegador, o que é aceitável
+  apenas para o MVP.
+- Não há recuperação de senha por e-mail. O administrador redefine a senha.
+- Não há exportação para DOCX na versão do Cloudflare.
+- Não há assinatura digital, tramitação nem integração com o SEI.
+- As fontes de exemplo não substituem normativos oficiais atualizados.
 - Toda minuta deve ser revisada por servidor competente.
 
-## Testes
+## Aplicação na Netlify (legado)
 
-```bash
-cd backend
-pytest
-```
+O arquivo `netlify.toml` compila o React e publica uma API em **Netlify
+Functions** (`frontend/netlify/functions/api.mjs`). Essa implantação é antiga e
+pode não acompanhar as mudanças feitas na versão do Cloudflare.
 
-Para validar o frontend:
+No painel do projeto:
 
-```bash
-cd frontend
-npm run build
-```
+1. Abra **Database** e ative o banco do projeto. A Netlify disponibiliza
+   `NETLIFY_DB_URL` às Functions.
+2. Em **Project configuration > Environment variables**, cadastre `SECRET_KEY`,
+   `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`, `GEMINI_API_KEY` e,
+   opcionalmente, `GEMINI_MODEL` (`gemini-2.5-flash`).
+3. Marque senhas e chaves como secretas e disponíveis para **Functions**.
+4. Execute **Deploys > Trigger deploy > Clear cache and deploy site**.
 
+Verifique a API em `https://iasoph.netlify.app/api/health`.

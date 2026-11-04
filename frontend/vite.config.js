@@ -8,8 +8,9 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
+      // Pages Functions locais: `npx wrangler pages dev` escuta nesta porta por padrão.
       '/api': {
-        target: 'http://127.0.0.1:8000',
+        target: 'http://127.0.0.1:8788',
         changeOrigin: true,
       },
     },
