@@ -37,6 +37,21 @@ test('converte títulos em caixa alta para formato de frase, preservando siglas'
   assert.ok(content.includes('CNPJ: 00.000.000/0001-00'), content)
 })
 
+test('o prompt enviado ao modelo exige as seções obrigatórias de ETP e Termo de Referência', async () => {
+  let enviado = ''
+  const {env, db} = await setup({AI: {run: async (_model, options) => {
+    enviado = options.messages.map(message => message.content).join('\n')
+    return {response: 'Texto de resposta.'}
+  }}})
+  db.conversations.push({id: 1, title: 'Teste', user_id: 1})
+  const token = await loginAs(env, ...ADMIN)
+  const res = await call(env, 'POST', '/conversations/1/messages', {content: 'Elabore um ETP para aquisição de licenças de software.', attachment_ids: [], web_search: false}, token)
+  assert.equal(res.status, 201)
+  for (const termo of ['alternativas de mercado', 'riscos', 'quantitativos', 'memória de cálculo', 'gestão e fiscalização do contrato', 'fiscal designado', 'Termo de Referência']) {
+    assert.ok(enviado.includes(termo), `prompt sem a exigência: "${termo}"`)
+  }
+})
+
 test('não altera o corpo do texto nem nomes escritos em caixa alta', async () => {
   const text = 'JOÃO DA SILVA assina a presente.\n\nO processo segue para a Assessoria Jurídica.'
   assert.equal(await answerWith(text), text)
