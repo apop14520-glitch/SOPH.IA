@@ -4,30 +4,70 @@ import {ArrowBack,DarkModeOutlined,LightModeOutlined} from '@mui/icons-material'
 import {api,errorMessage} from '../api'
 import {ColorModeContext} from '../theme'
 
-const sectors=['Presidência','Diretoria Administrativa e Financeira','Diretoria Técnica','Tecnologia da Informação','Recursos Humanos','Licitações e Contratos','Jurídico','Outro']
-const loadUsers=()=>{try{return JSON.parse(localStorage.getItem('sophia_users')||'[]')}catch{return[]}}
-const saveUsers=users=>localStorage.setItem('sophia_users',JSON.stringify(users))
-const strong=password=>password.length>=8&&/[A-Z]/.test(password)&&/[a-z]/.test(password)&&/\d/.test(password)&&/[^A-Za-z0-9]/.test(password)
+// Mesmos nomes da tabela de setores do backend, para que o cadastro seja aceito.
+const sectors=['Presidência','Diretoria Administrativa e Financeira','Diretoria Técnica e Operacional','Tecnologia da Informação','Recursos Humanos','Licitações e Contratos','Assessoria Jurídica','Outro']
+const strongPassword=password=>password.length>=8&&/[A-Z]/.test(password)&&/[a-z]/.test(password)&&/\d/.test(password)&&/[^A-Za-z0-9]/.test(password)
+const emptyForm={name:'',sector:'',email:'',password:'',confirm:''}
 
 export default function Login({onLogin}){
  const {mode:colorMode,toggle}=useContext(ColorModeContext)
- const resetMode=location.hash.includes('/redefinir'),params=new URLSearchParams(location.hash.split('?')[1]||'')
- const [mode,setMode]=useState(resetMode?'reset':'login'),[email,setEmail]=useState(''),[password,setPassword]=useState(''),[error,setError]=useState(''),[message,setMessage]=useState('')
- const [form,setForm]=useState({name:'',sector:'',email:'',password:'',confirm:''}),token=params.get('token')
- const submitLogin=async e=>{e.preventDefault();setError('');try{const{data}=await api.post('/auth/login',{email,password});localStorage.setItem('sophia_token',data.access_token);localStorage.setItem('sophia_current_user',JSON.stringify(data.user));onLogin(data.user)}catch(e){setError(errorMessage(e,'E-mail ou senha inválidos'))}}
- const register=async e=>{e.preventDefault();setError('');setMessage('');if(!/@sophi?a?\.ro\.gov\.br$/i.test(form.email)){setError('Use um e-mail institucional da SOPH.');return}if(!strong(form.password)){setError('A senha deve ter 8 caracteres, maiúscula, minúscula, número e símbolo.');return}if(form.password!==form.confirm){setError('A confirmação de senha não corresponde.');return}try{await api.post('/auth/register',{name:form.name,sector:form.sector,email:form.email,password:form.password});setEmail(form.email);setPassword('');setMessage('Cadastro concluído. Agora acesse com sua nova conta.');setMode('login')}catch(e){setError(errorMessage(e,'Não foi possível concluir o cadastro.'))}}
- const requestReset=e=>{e.preventDefault();setError('');const user=loadUsers().find(u=>u.email.toLowerCase()===form.email.toLowerCase());if(!user&&form.email.toLowerCase()!=='admin@sophia.ro.gov.br'){setError('Não foi localizado um cadastro com esse e-mail.');return}const resetToken=btoa(`${form.email}|${Date.now()+3600000}`);localStorage.setItem(`sophia_reset_${resetToken}`,form.email);const link=`${location.origin}${location.pathname}#/redefinir?token=${encodeURIComponent(resetToken)}`;setMessage(`Solicitação registrada. No ambiente local, use este link de redefinição: ${link}`)}
- const reset=e=>{e.preventDefault();setError('');const resetEmail=localStorage.getItem(`sophia_reset_${token}`);if(!resetEmail){setError('Link inválido ou expirado. Solicite uma nova redefinição.');return}if(!strong(form.password)){setError('A senha deve ter 8 caracteres, maiúscula, minúscula, número e símbolo.');return}if(form.password!==form.confirm){setError('A confirmação não corresponde.');return}const users=loadUsers(),index=users.findIndex(u=>u.email===resetEmail);if(index>=0){users[index].password=form.password;saveUsers(users)}else localStorage.setItem('sophia_admin_password',form.password);localStorage.removeItem(`sophia_reset_${token}`);setEmail(resetEmail);setPassword('');setMessage('Senha alterada. Clique em Acessar para entrar.');setMode('login');location.hash='#/'}
- const title={login:'Acesse a SOPH.IA',register:'Criar cadastro',forgot:'Recuperar senha',reset:'Definir nova senha'}[mode]
+ const [mode,setMode]=useState('login'),[email,setEmail]=useState(''),[password,setPassword]=useState(''),[error,setError]=useState(''),[message,setMessage]=useState('')
+ const [form,setForm]=useState(emptyForm)
+ const goTo=next=>{setMode(next);setError('');setMessage('')}
+
+ const submitLogin=async e=>{
+  e.preventDefault();setError('')
+  try{
+   const{data}=await api.post('/auth/login',{email,password})
+   localStorage.setItem('sophia_token',data.access_token)
+   onLogin(data.user)
+  }catch(err){setError(errorMessage(err,'E-mail ou senha inválidos'))}
+ }
+
+ const register=async e=>{
+  e.preventDefault();setError('');setMessage('')
+  const cleanEmail=form.email.trim()
+  if(!/@soph\.ro\.gov\.br$/i.test(cleanEmail)){setError('Use um e-mail institucional @soph.ro.gov.br.');return}
+  if(!strongPassword(form.password)){setError('A senha deve ter 8 caracteres, maiúscula, minúscula, número e símbolo.');return}
+  if(form.password!==form.confirm){setError('A confirmação de senha não corresponde.');return}
+  try{
+   await api.post('/auth/register',{name:form.name.trim(),sector:form.sector,email:cleanEmail,password:form.password})
+   setEmail(cleanEmail);setPassword('');setForm(emptyForm)
+   setMode('login');setMessage('Cadastro concluído. Agora acesse com sua nova conta.')
+  }catch(err){setError(errorMessage(err,'Não foi possível concluir o cadastro.'))}
+ }
+
+ const title={login:'Acesse a SOPH.IA',register:'Criar cadastro',forgot:'Recuperar senha'}[mode]
+
  return <Box sx={{minHeight:'100vh',display:'grid',placeItems:'center',p:{xs:2,sm:4},position:'relative',backgroundImage:`linear-gradient(rgba(20,14,10,.50),rgba(20,14,10,.50)),url('/porto-soph-login.jpg')`,backgroundSize:'cover',backgroundPosition:'center',backgroundAttachment:{md:'fixed'}}}>
   <IconButton onClick={toggle} aria-label={colorMode==='dark'?'Ativar tema claro':'Ativar tema escuro'} sx={{position:'fixed',top:{xs:16,sm:24},right:{xs:16,sm:24},zIndex:2,width:44,height:44,color:'#fff',backgroundColor:'rgba(20,16,13,.58)',backdropFilter:'blur(12px)',border:'1px solid rgba(255,255,255,.24)','&:hover':{backgroundColor:'rgba(242,101,34,.88)'}}}>{colorMode==='dark'?<LightModeOutlined/>:<DarkModeOutlined/>}</IconButton>
   <Card sx={{width:'min(460px,100%)',maxHeight:'calc(100vh - 32px)',overflowY:'auto',borderRadius:4,backgroundColor:colorMode==='dark'?'rgba(31,27,24,.96)':'rgba(255,255,255,.94)',backdropFilter:'blur(16px)',boxShadow:'0 24px 80px rgba(0,0,0,.38)',border:'1px solid',borderColor:colorMode==='dark'?'rgba(255,255,255,.13)':'rgba(255,255,255,.72)'}}><CardContent sx={{p:{xs:3,sm:4}}}>
-  {mode!=='login'&&<IconButton onClick={()=>{setMode('login');setError('');setMessage('')}}><ArrowBack/></IconButton>}<Typography variant="h3" color="primary" fontWeight={900}>SOPH.IA</Typography><Typography variant="h6" mt={1} mb={3}>{title}</Typography>
+  {mode!=='login'&&<IconButton onClick={()=>goTo('login')} aria-label="Voltar ao acesso"><ArrowBack/></IconButton>}
+  <Typography variant="h3" color="primary" fontWeight={900}>SOPH.IA</Typography><Typography variant="h6" mt={1} mb={3}>{title}</Typography>
   {error&&<Alert severity="error" sx={{mb:2}}>{error}</Alert>}{message&&<Alert severity="success" sx={{mb:2,wordBreak:'break-word'}}>{message}</Alert>}
-  {mode==='login'&&<Box component="form" onSubmit={submitLogin} display="grid" gap={2}><TextField label="E-mail" value={email} onChange={e=>setEmail(e.target.value)}/><TextField label="Senha" type="password" value={password} onChange={e=>setPassword(e.target.value)}/><Box display="flex" justifyContent="space-between"><Link component="button" type="button" onClick={()=>{setForm({...form,email});setMode('forgot')}} sx={{color:'primary.main',fontWeight:800,fontSize:13}}>Esqueci a senha</Link><Link component="button" type="button" onClick={()=>setMode('register')} sx={{color:'primary.main',fontWeight:800,fontSize:13}}>Cadastre-se</Link></Box><Button type="submit" variant="contained" size="large">Acessar</Button></Box>}
-  {mode==='register'&&<Box component="form" onSubmit={register} display="grid" gap={2}><TextField required label="Nome completo" value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/><FormControl required><InputLabel>Setor</InputLabel><Select label="Setor" value={form.sector} onChange={e=>setForm({...form,sector:e.target.value})}>{sectors.map(s=><MenuItem key={s} value={s}>{s}</MenuItem>)}</Select></FormControl><TextField required label="E-mail institucional" value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/><TextField required type="password" label="Senha forte" value={form.password} onChange={e=>setForm({...form,password:e.target.value})} helperText="8+ caracteres, maiúscula, minúscula, número e símbolo"/><TextField required type="password" label="Confirmar senha" value={form.confirm} onChange={e=>setForm({...form,confirm:e.target.value})}/><Button type="submit" variant="contained">Cadastrar</Button></Box>}
-  {mode==='forgot'&&<Box component="form" onSubmit={requestReset} display="grid" gap={2}><Typography color="text.secondary">Informe seu e-mail institucional para gerar a solicitação de troca.</Typography><TextField required label="E-mail institucional" value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/><Button type="submit" variant="contained">Solicitar troca de senha</Button></Box>}
-  {mode==='reset'&&<Box component="form" onSubmit={reset} display="grid" gap={2}><TextField required type="password" label="Nova senha" value={form.password} onChange={e=>setForm({...form,password:e.target.value})}/><TextField required type="password" label="Confirmar nova senha" value={form.confirm} onChange={e=>setForm({...form,confirm:e.target.value})}/><Button type="submit" variant="contained">Alterar senha</Button></Box>}
+
+  {mode==='login'&&<Box component="form" onSubmit={submitLogin} display="grid" gap={2}>
+   <TextField required label="E-mail" type="email" autoComplete="username" value={email} onChange={e=>setEmail(e.target.value)}/>
+   <TextField required label="Senha" type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)}/>
+   <Box display="flex" justifyContent="space-between">
+    <Link component="button" type="button" onClick={()=>goTo('forgot')} sx={{color:'primary.main',fontWeight:800,fontSize:13}}>Esqueci a senha</Link>
+    <Link component="button" type="button" onClick={()=>goTo('register')} sx={{color:'primary.main',fontWeight:800,fontSize:13}}>Cadastre-se</Link>
+   </Box>
+   <Button type="submit" variant="contained" size="large">Acessar</Button>
+  </Box>}
+
+  {mode==='register'&&<Box component="form" onSubmit={register} display="grid" gap={2}>
+   <TextField required label="Nome completo" autoComplete="name" value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/>
+   <FormControl required><InputLabel>Setor</InputLabel><Select label="Setor" value={form.sector} onChange={e=>setForm({...form,sector:e.target.value})}>{sectors.map(s=><MenuItem key={s} value={s}>{s}</MenuItem>)}</Select></FormControl>
+   <TextField required type="email" label="E-mail institucional" placeholder="nome@soph.ro.gov.br" autoComplete="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/>
+   <TextField required type="password" label="Senha forte" autoComplete="new-password" value={form.password} onChange={e=>setForm({...form,password:e.target.value})} helperText="8+ caracteres, maiúscula, minúscula, número e símbolo"/>
+   <TextField required type="password" label="Confirmar senha" autoComplete="new-password" value={form.confirm} onChange={e=>setForm({...form,confirm:e.target.value})}/>
+   <Button type="submit" variant="contained" size="large">Cadastrar</Button>
+  </Box>}
+
+  {mode==='forgot'&&<Box display="grid" gap={2}>
+   <Typography color="text.secondary">A redefinição de senha é feita por um administrador da SOPH.IA. Entre em contato com a equipe de TI informando seu e-mail institucional.</Typography>
+   <Button variant="contained" onClick={()=>goTo('login')}>Voltar ao acesso</Button>
+  </Box>}
  </CardContent></Card></Box>
 }
-
