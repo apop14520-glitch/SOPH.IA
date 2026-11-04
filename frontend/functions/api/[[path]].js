@@ -129,8 +129,20 @@ async function ensureSchema(env) {
   }
 }
 
+const SESSION_COOKIE = 'sophia_session'
+const SESSION_MAX_AGE = 60 * 60 * 8
+// Cookie HttpOnly: o navegador envia sozinho e o JavaScript da página não consegue ler o token.
+const sessionCookie = (value, maxAge) => `${SESSION_COOKIE}=${value}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${maxAge}`
+// Aceita o Bearer (clientes de API e testes) ou o cookie de sessão (navegador).
+function tokenFromRequest(request) {
+  const bearer = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '')
+  if (bearer) return bearer
+  const match = (request.headers.get('cookie') || '').match(new RegExp(`(?:^|;\\s*)${SESSION_COOKIE}=([^;]+)`))
+  return match ? match[1] : null
+}
+
 async function currentUser(request, env) {
-  const token = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '')
+  const token = tokenFromRequest(request)
   const payload = token ? await verifyToken(env, token) : null
   if (!payload) return null
   return env.DB.prepare('SELECT u.id,u.name,u.email,u.role,u.active,u.sector_id,s.name sector_name FROM users u LEFT JOIN sectors s ON s.id=u.sector_id WHERE u.id=? AND u.active=1').bind(Number(payload.sub)).first()
@@ -535,6 +547,7 @@ async function handler(context) {
     const body = ['POST','PUT','PATCH'].includes(method) && contentType.includes('application/json') ? await request.json().catch(() => ({})) : {}
 
     if (path === '/health') return json({status: 'ok', platform: 'cloudflare-pages', ai: Boolean(env.AI), database: Boolean(env.DB)})
+    if (path === '/auth/logout' && method === 'POST') return json({ok: true}, 200, {'set-cookie': sessionCookie('', 0)})
     if (path === '/auth/login' && method === 'POST') {
       const emailKey = `email:${String(body.email || '').trim().toLowerCase()}`
       const ipKey = `ip:${request.headers.get('cf-connecting-ip') || 'desconhecido'}`
@@ -548,7 +561,8 @@ async function handler(context) {
       }
       await env.DB.prepare('DELETE FROM login_attempts WHERE key=?').bind(emailKey).run()
       const {password_hash: _hash, ...safeUser} = user
-      return json({access_token: await createToken(env, user), token_type: 'bearer', user: publicUser(safeUser)})
+      const token = await createToken(env, user)
+      return json({access_token: token, token_type: 'bearer', user: publicUser(safeUser)}, 200, {'set-cookie': sessionCookie(token, SESSION_MAX_AGE)})
     }
     if (path === '/auth/register' && method === 'POST') {
       const email = String(body.email || '').trim().toLowerCase()

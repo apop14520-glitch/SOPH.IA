@@ -4,11 +4,7 @@ import axios from 'axios'
 // própria publicação do Cloudflare Pages atende /api. Em desenvolvimento, o
 // Vite encaminha /api às Pages Functions locais (ver README).
 export const api = axios.create({baseURL: import.meta.env.VITE_API_URL || '/api'})
-api.interceptors.request.use(config => {
-  const token = localStorage.getItem('sophia_token')
-  if (token) config.headers.Authorization = `Bearer ${token}`
-  return config
-})
+// A sessão vai em cookie HttpOnly, enviado pelo navegador; nada é guardado no JavaScript.
 
 // Na hospedagem estática, uma rota /api inexistente pode devolver o index.html
 // com status 200. Sem esta validação, o React interpreta o HTML como dados da
