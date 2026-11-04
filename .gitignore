@@ -18,4 +18,5 @@ outputs/
 .wrangler/
 .dev.vars
 frontend/wrangler.toml
+evals/out/
 

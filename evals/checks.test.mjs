@@ -1,0 +1,93 @@
+// Testa o verificador com respostas de exemplo. Executar com: node --test evals/checks.test.mjs
+import {test} from 'node:test'
+import assert from 'node:assert/strict'
+import {readFileSync} from 'node:fs'
+import {checkResponse} from './checks.mjs'
+
+const cases = JSON.parse(readFileSync(new URL('./requests.json', import.meta.url), 'utf8'))
+const byId = id => cases.find(item => item.id === id)
+
+const PARAGRAPH = 'A necessidade decorre do volume de projetos da unidade. As alternativas de mercado foram comparadas com a solução proposta. Os riscos de não contratação e de atraso foram identificados. O valor estimado depende de pesquisa de preços atualizada. '
+const longBody = (times = 30) => Array(times).fill(PARAGRAPH).join('\n\n')
+const SAFE_ETP = `## Estudo técnico preliminar\n\n### Objeto\n\nLicenças anuais do software Revit para doze usuários.\n\n${longBody()}`
+
+test('resposta limpa e completa passa sem falhas', () => {
+  const result = checkResponse(byId('etp-01'), SAFE_ETP)
+  assert.deepEqual(result.failures, [])
+})
+
+test('reprova colchetes e "informação a completar"', () => {
+  const text = SAFE_ETP + '\n\n### Justificativa\n\n[INFORMAÇÃO A COMPLETAR]'
+  const result = checkResponse(byId('etp-01'), text)
+  assert.ok(result.failures.some(item => item.startsWith('placeholder')))
+})
+
+test('reprova título inteiro em caixa alta', () => {
+  const text = SAFE_ETP + '\n\n1. IDENTIFICAÇÃO DA DEMANDA\n\nTexto.'
+  const result = checkResponse(byId('etp-01'), text)
+  assert.ok(result.failures.some(item => item.startsWith('caixa alta')))
+})
+
+test('não confunde siglas e números com caixa alta de título', () => {
+  const text = SAFE_ETP + '\n\nCNPJ: 00.000.000/0001-00\n\nSEI 2026'
+  const result = checkResponse(byId('etp-01'), text)
+  assert.ok(!result.failures.some(item => item.startsWith('caixa alta')), result.failures.join(' | '))
+})
+
+test('reprova seção interna como Observação', () => {
+  const text = SAFE_ETP + '\n\n## Observação\n\nRevise antes de usar.'
+  const result = checkResponse(byId('etp-01'), text)
+  assert.ok(result.failures.some(item => item.startsWith('seção interna')))
+})
+
+test('reprova comentário sobre a própria IA', () => {
+  const text = SAFE_ETP + '\n\nComo modelo de linguagem, não tenho acesso ao processo.'
+  const result = checkResponse(byId('etp-01'), text)
+  assert.ok(result.failures.some(item => item.startsWith('comentário sobre a IA')))
+})
+
+test('reprova campos de SEI não solicitados em despacho', () => {
+  const text = '## Despacho\n\nEncaminhem-se os autos à Assessoria Jurídica para análise da multa contratual aplicada. ' + PARAGRAPH + '\n\nLocal e data: Porto Velho'
+  const result = checkResponse(byId('desp-01'), text)
+  assert.ok(result.failures.some(item => item.startsWith('campos de cabeçalho')))
+})
+
+test('reprova minuta quando o pedido era uma pergunta', () => {
+  const text = '## Despacho\n\nA dispensa e a inexigibilidade diferem na hipótese legal. ' + PARAGRAPH
+  const result = checkResponse(byId('pergunta-01'), text)
+  assert.ok(result.failures.some(item => item.startsWith('respondeu com uma minuta')))
+})
+
+test('reprova resposta curta', () => {
+  const result = checkResponse(byId('etp-01'), 'Revit. Licenças. Risco. Valor. Alternativas.')
+  assert.ok(result.failures.some(item => item.startsWith('resposta curta')))
+})
+
+test('reprova resposta que não trata dos termos do pedido', () => {
+  const semRevit = SAFE_ETP.replace(/Revit/g, 'software')
+  const result = checkResponse(byId('etp-01'), semRevit)
+  assert.ok(result.failures.some(item => item.includes('revit')), result.failures.join(' | '))
+})
+
+test('referência legal não citada no pedido gera aviso, não falha', () => {
+  const text = SAFE_ETP + '\n\nA contratação observa a Lei nº 9.999/2020.'
+  const result = checkResponse(byId('etp-01'), text)
+  assert.deepEqual(result.failures, [])
+  assert.ok(result.warnings.some(item => item.includes('9.999/2020')))
+})
+
+test('resposta vazia é reprovada', () => {
+  const result = checkResponse(byId('etp-01'), '   ')
+  assert.deepEqual(result.failures, ['sem resposta'])
+})
+
+test('requests.json tem 15 casos, ids únicos e tipos válidos', () => {
+  assert.equal(cases.length, 15)
+  assert.equal(new Set(cases.map(item => item.id)).size, 15)
+  const kinds = new Set(['etp', 'tr', 'despacho', 'memorando', 'revisao', 'pergunta'])
+  for (const item of cases) {
+    assert.ok(kinds.has(item.kind), `tipo inválido em ${item.id}`)
+    assert.ok(item.prompt.length > 20, `pedido curto em ${item.id}`)
+    assert.ok(Array.isArray(item.must) && item.must.length > 0, `sem termos obrigatórios em ${item.id}`)
+  }
+})
