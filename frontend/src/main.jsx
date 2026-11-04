@@ -1,3 +1,4 @@
+import '@fontsource-variable/inter'
 import React,{useMemo,useState} from 'react'
 import ReactDOM from 'react-dom/client'
 import {HashRouter} from 'react-router-dom'

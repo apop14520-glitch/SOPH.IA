@@ -37,23 +37,23 @@ export default function Login({onLogin}){
   }catch(err){setError(errorMessage(err,'Não foi possível concluir o cadastro.'))}
  }
 
- const title={login:'Acesse a SOPH.IA',register:'Criar cadastro',forgot:'Recuperar senha'}[mode]
+ const title={login:'Entrar',register:'Criar cadastro',forgot:'Recuperar senha'}[mode]
 
  return <Box sx={{minHeight:'100vh',display:'grid',placeItems:'center',p:{xs:2,sm:4},position:'relative',backgroundImage:`linear-gradient(rgba(20,14,10,.50),rgba(20,14,10,.50)),url('/porto-soph-login.jpg')`,backgroundSize:'cover',backgroundPosition:'center',backgroundAttachment:{md:'fixed'}}}>
   <IconButton onClick={toggle} aria-label={colorMode==='dark'?'Ativar tema claro':'Ativar tema escuro'} sx={{position:'fixed',top:{xs:16,sm:24},right:{xs:16,sm:24},zIndex:2,width:44,height:44,color:'#fff',backgroundColor:'rgba(20,16,13,.58)',backdropFilter:'blur(12px)',border:'1px solid rgba(255,255,255,.24)','&:hover':{backgroundColor:'rgba(242,101,34,.88)'}}}>{colorMode==='dark'?<LightModeOutlined/>:<DarkModeOutlined/>}</IconButton>
   <Card sx={{width:'min(460px,100%)',maxHeight:'calc(100vh - 32px)',overflowY:'auto',borderRadius:4,backgroundColor:colorMode==='dark'?'rgba(31,27,24,.96)':'rgba(255,255,255,.94)',backdropFilter:'blur(16px)',boxShadow:'0 24px 80px rgba(0,0,0,.38)',border:'1px solid',borderColor:colorMode==='dark'?'rgba(255,255,255,.13)':'rgba(255,255,255,.72)'}}><CardContent sx={{p:{xs:3,sm:4}}}>
   {mode!=='login'&&<IconButton onClick={()=>goTo('login')} aria-label="Voltar ao acesso"><ArrowBack/></IconButton>}
-  <Typography variant="h3" color="primary" fontWeight={900}>SOPH.IA</Typography><Typography variant="h6" mt={1} mb={3}>{title}</Typography>
+  <Typography variant="h3" color="primary" fontWeight={900}>SOPH.IA</Typography><Typography color="text.secondary" variant="body2" mt={1}>Assistente para elaborar e revisar documentos. Uso restrito a servidores com e-mail institucional.</Typography><Typography variant="h6" mt={2.5} mb={3}>{title}</Typography>
   {error&&<Alert severity="error" sx={{mb:2}}>{error}</Alert>}{message&&<Alert severity="success" sx={{mb:2,wordBreak:'break-word'}}>{message}</Alert>}
 
   {mode==='login'&&<Box component="form" onSubmit={submitLogin} display="grid" gap={2}>
    <TextField required label="E-mail" type="email" autoComplete="username" value={email} onChange={e=>setEmail(e.target.value)}/>
    <TextField required label="Senha" type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)}/>
    <Box display="flex" justifyContent="space-between">
-    <Link component="button" type="button" onClick={()=>goTo('forgot')} sx={{color:'primary.main',fontWeight:800,fontSize:13}}>Esqueci a senha</Link>
-    <Link component="button" type="button" onClick={()=>goTo('register')} sx={{color:'primary.main',fontWeight:800,fontSize:13}}>Cadastre-se</Link>
+    <Link component="button" type="button" onClick={()=>goTo('forgot')} sx={{color:'primary.main',fontWeight:800,fontSize:13,minHeight:44,display:'inline-flex',alignItems:'center',px:1}}>Esqueci a senha</Link>
+    <Link component="button" type="button" onClick={()=>goTo('register')} sx={{color:'primary.main',fontWeight:800,fontSize:13,minHeight:44,display:'inline-flex',alignItems:'center',px:1}}>Cadastre-se</Link>
    </Box>
-   <Button type="submit" variant="contained" size="large">Acessar</Button>
+   <Button type="submit" variant="contained" size="large" sx={{minHeight:48}}>Acessar</Button>
   </Box>}
 
   {mode==='register'&&<Box component="form" onSubmit={register} display="grid" gap={2}>
