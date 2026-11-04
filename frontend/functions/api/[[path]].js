@@ -807,6 +807,28 @@ async function handler(context) {
         .bind(form.get('title') || file.name, category, file.name, file.type || 'application/octet-stream', env.DOCUMENTS ? key : null, content, user.id).run()
       return json(await env.DB.prepare('SELECT id,title,category,filename,mime_type,created_at FROM knowledge WHERE id=?').bind(result.meta.last_row_id).first(), 201)
     }
+    // Reprocessa documentos institucionais enviados antes da conversão: guarda o texto de PDF e DOCX sem texto salvo.
+    if (path === '/admin/knowledge/reprocess' && method === 'POST') {
+      if (user.role !== 'admin') return fail('Acesso restrito.', 403)
+      if (!env.AI?.toMarkdown || !env.DOCUMENTS) return fail('A conversão de documentos não está configurada (AI e R2).', 503)
+      const pending = (await env.DB.prepare("SELECT id,filename,mime_type,storage_key FROM knowledge WHERE category != ? AND content = '' AND storage_key IS NOT NULL ORDER BY id").bind(ATTACHMENT_CATEGORY).all()).results
+      const failed = []
+      let converted = 0
+      for (const item of pending) {
+        try {
+          const stored = await env.DOCUMENTS.get(item.storage_key)
+          if (!stored) throw new Error('arquivo não encontrado')
+          const result = await env.AI.toMarkdown({name: item.filename, blob: new Blob([await stored.arrayBuffer()], {type: item.mime_type || 'application/octet-stream'})}, {conversionOptions: {output: {format: 'text'}, pdf: {metadata: false}}})
+          const content = String((Array.isArray(result) ? result[0] : result)?.data || '').trim().slice(0, 120000)
+          if (!content) throw new Error('nenhum texto extraído')
+          await env.DB.prepare('UPDATE knowledge SET content=? WHERE id=?').bind(content, item.id).run()
+          converted += 1
+        } catch {
+          failed.push(item.filename)
+        }
+      }
+      return json({total: pending.length, convertidos: converted, falhas: failed})
+    }
     match = path.match(/^\/knowledge\/(\d+)\/file$/)
     if (match && method === 'GET') {
       const item = await env.DB.prepare('SELECT * FROM knowledge WHERE id=?').bind(Number(match[1])).first()
