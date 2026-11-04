@@ -50,9 +50,29 @@ test('perfil padrão não altera e-mail de outras contas', async () => {
   assert.equal((await call(env, 'PATCH', '/users/3', {email: 'invasao@gmail.com'}, padrao)).status, 403)
 })
 
-test('cadastro público aceita qualquer e-mail válido', async () => {
-  const {env} = await setup()
+test('cadastro público cria conta inativa até o admin ativar', async () => {
+  const {env, db} = await setup()
   const res = await call(env, 'POST', '/auth/register', {name: 'Pessoa Gmail', email: 'pessoa@gmail.com', password: SENHA, sector: 'Tecnologia da Informação'})
   assert.equal(res.status, 201)
+  const pending = db.users.find(user => user.email === 'pessoa@gmail.com')
+  assert.equal(pending.active, 0)
+  const blocked = await call(env, 'POST', '/auth/login', {email: 'pessoa@gmail.com', password: SENHA})
+  assert.equal(blocked.status, 403)
+  assert.match((await blocked.json()).detail, /inativa/)
+  assert.equal((await call(env, 'POST', '/auth/login', {email: 'pessoa@gmail.com', password: 'Errada@Senha1'})).status, 401)
+  const admin = await loginAs(env, ADMIN[0], ADMIN[1])
+  assert.equal((await call(env, 'PATCH', `/users/${pending.id}`, {active: true}, admin)).status, 200)
   assert.equal((await call(env, 'POST', '/auth/login', {email: 'pessoa@gmail.com', password: SENHA})).status, 200)
+})
+
+test('esqueci a senha envia para o e-mail cadastrado, inclusive Gmail; conta pendente não recebe', async () => {
+  const sent = []
+  const {env} = await setup({SEND_EMAIL: async (to, link) => { sent.push({to, link}) }})
+  const admin = await loginAs(env, ADMIN[0], ADMIN[1])
+  assert.equal((await call(env, 'POST', '/users', {name: 'Pessoa', email: 'Pessoa.Teste@Gmail.com', password: SENHA, role: 'padrao', sector_id: 1}, admin)).status, 201)
+  assert.equal((await call(env, 'POST', '/auth/forgot', {email: 'PESSOA.teste@gmail.com'})).status, 200)
+  assert.deepEqual(sent.map(item => item.to), ['pessoa.teste@gmail.com'])
+  await call(env, 'POST', '/auth/register', {name: 'Pendente', email: 'pendente@gmail.com', password: SENHA, sector: 'Tecnologia da Informação'})
+  assert.equal((await call(env, 'POST', '/auth/forgot', {email: 'pendente@gmail.com'})).status, 200)
+  assert.equal(sent.length, 1, 'conta pendente não deveria receber link')
 })

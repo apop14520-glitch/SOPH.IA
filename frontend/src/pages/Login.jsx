@@ -35,9 +35,9 @@ export default function Login({onLogin}){
   if(!strongPassword(form.password)){setError('A senha deve ter 8 caracteres, maiúscula, minúscula, número e símbolo.');return}
   if(form.password!==form.confirm){setError('A confirmação de senha não corresponde.');return}
   try{
-   await api.post('/auth/register',{name:form.name.trim(),sector:form.sector,email:cleanEmail,password:form.password})
+   const{data}=await api.post('/auth/register',{name:form.name.trim(),sector:form.sector,email:cleanEmail,password:form.password})
    setEmail(cleanEmail);setPassword('');setForm(emptyForm)
-   setMode('login');setMessage('Cadastro concluído. Agora acesse com sua nova conta.')
+   setMode('login');setMessage(data.message)
   }catch(err){setError(errorMessage(err,'Não foi possível concluir o cadastro.'))}
  }
 

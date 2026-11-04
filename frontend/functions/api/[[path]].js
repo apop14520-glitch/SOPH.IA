@@ -672,11 +672,14 @@ async function handler(context) {
       const now = Math.floor(Date.now() / 1000)
       if (await loginBlockedUntil(env, [emailKey, ipKey], now)) return fail('Muitas tentativas de acesso. Aguarde alguns minutos e tente novamente.', 429)
       const user = await env.DB.prepare('SELECT u.*,s.name sector_name FROM users u LEFT JOIN sectors s ON s.id=u.sector_id WHERE lower(u.email)=lower(?)').bind(body.email || '').first()
-      if (!user || !user.active || !await passwordValid(body.password || '', user.password_hash)) {
+      const passwordOk = Boolean(user) && await passwordValid(body.password || '', user.password_hash)
+      if (!passwordOk) {
         await recordLoginFailure(env, emailKey, LOGIN_LIMITS.email, now)
         await recordLoginFailure(env, ipKey, LOGIN_LIMITS.ip, now)
         return fail('E-mail ou senha inválidos.', 401)
       }
+      // Só com a senha correta a pessoa recebe o aviso: assim o aviso não revela contas existentes.
+      if (!user.active) return fail('Conta inativa. Peça à administração da SOPH.IA para ativá-la.', 403)
       await env.DB.prepare('DELETE FROM login_attempts WHERE key=?').bind(emailKey).run()
       const {password_hash: _hash, ...safeUser} = user
       const token = await createToken(env, user)
@@ -689,8 +692,9 @@ async function handler(context) {
       const sector = await env.DB.prepare('SELECT id FROM sectors WHERE lower(name)=lower(?)').bind(body.sector || '').first()
       if (!sector) return fail('Setor inválido.')
       try {
-        await env.DB.prepare("INSERT INTO users(name,email,password_hash,role,sector_id) VALUES(?,?,?,?,?)").bind(body.name, email, await passwordHash(body.password), 'padrao', sector.id).run()
-        return json({message: 'Cadastro concluído.'}, 201)
+        // Cadastro público entra inativo: a administração ativa a conta antes do primeiro acesso.
+        await env.DB.prepare("INSERT INTO users(name,email,password_hash,role,sector_id,active) VALUES(?,?,?,?,?,?)").bind(body.name, email, await passwordHash(body.password), 'padrao', sector.id, 0).run()
+        return json({message: 'Cadastro recebido. A administração da SOPH.IA precisa ativar sua conta antes do primeiro acesso.'}, 201)
       } catch { return fail('Já existe um usuário com esse e-mail.', 409) }
     }
 

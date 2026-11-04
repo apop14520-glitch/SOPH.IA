@@ -107,7 +107,7 @@ export function createDb(initialUsers) {
   function exec(sql, args) {
     if (/^INSERT INTO users/.test(sql)) {
       const [name, email, password_hash, role, sector_id] = args
-      const row = {id: nextId++, name, email, password_hash, role, active: 1, sector_id}
+      const row = {id: nextId++, name, email, password_hash, role, active: args.length > 5 ? args[5] : 1, sector_id}
       users.push(row)
       return {meta: {last_row_id: row.id, changes: 1}}
     }
