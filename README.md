@@ -142,7 +142,6 @@ frontend/
   src/          interface React (telas em pages/, componentes em components/)
   functions/    API em Pages Functions (api/[[path]].js)
   tests/        testes de permissões e de pós-processamento
-  netlify/      implantação antiga na Netlify (legado)
 evals/          conjunto de avaliação das respostas da IA
 ```
 
@@ -162,21 +161,3 @@ evals/          conjunto de avaliação das respostas da IA
 - Não há assinatura digital, tramitação nem integração com o SEI.
 - As fontes de exemplo não substituem normativos oficiais atualizados.
 - Toda minuta deve ser revisada por servidor competente.
-
-## Aplicação na Netlify (legado)
-
-O arquivo `netlify.toml` compila o React e publica uma API em **Netlify
-Functions** (`frontend/netlify/functions/api.mjs`). Essa implantação é antiga e
-pode não acompanhar as mudanças feitas na versão do Cloudflare.
-
-No painel do projeto:
-
-1. Abra **Database** e ative o banco do projeto. A Netlify disponibiliza
-   `NETLIFY_DB_URL` às Functions.
-2. Em **Project configuration > Environment variables**, cadastre `SECRET_KEY`,
-   `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`, `GEMINI_API_KEY` e,
-   opcionalmente, `GEMINI_MODEL` (`gemini-2.5-flash`).
-3. Marque senhas e chaves como secretas e disponíveis para **Functions**.
-4. Execute **Deploys > Trigger deploy > Clear cache and deploy site**.
-
-Verifique a API em `https://iasoph.netlify.app/api/health`.
