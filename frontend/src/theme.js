@@ -18,5 +18,6 @@ export const makeTheme=mode=>createTheme({
     MuiButton:{styleOverrides:{root:{textTransform:'none',fontWeight:700,'@media (max-width:899.95px)':{minHeight:44}},outlined:{borderColor:mode==='dark'?'rgba(255,255,255,.24)':'rgba(44,33,27,.22)'}}},
     MuiTab:{styleOverrides:{root:{textTransform:'none'}}},
     MuiDrawer:{styleOverrides:{paper:{backgroundImage:'none'}}},
+    MuiCssBaseline:{styleOverrides:{html:{colorScheme:mode}}},
   }
 })
