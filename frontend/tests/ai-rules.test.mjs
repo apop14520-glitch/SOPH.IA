@@ -29,7 +29,8 @@ test('resposta vazia no teste devolve mensagem clara', async () => {
 })
 
 test('o prompt de produção aplica só a Lei 13.303/2016 e proíbe citar a 8.666/1993', () => {
-  const source = readFileSync(new URL('../functions/api/[[path]].js', import.meta.url), 'utf8')
+  // A regra vive no módulo de comportamento, usado pelo Worker.
+  const source = readFileSync(new URL('../functions/api/[[path]].js', import.meta.url), 'utf8') + readFileSync(new URL('../lib/behavior.js', import.meta.url), 'utf8')
   assert.ok(source.includes('Para a SOPH, a norma aplicável a licitações e contratos é a Lei nº 13.303/2016 (Lei das Estatais).'))
   assert.ok(source.includes('Não cite a Lei nº 8.666/1993, que está revogada'))
 })

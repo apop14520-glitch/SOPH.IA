@@ -87,9 +87,9 @@ test('resposta vazia é reprovada', () => {
   assert.deepEqual(result.failures, ['sem resposta'])
 })
 
-test('requests.json tem 15 pedidos simples e 5 sequências, ids únicos e tipos válidos', () => {
+test('requests.json tem 22 pedidos simples e 5 sequências, ids únicos e tipos válidos', () => {
   const single = cases.filter(item => !item.turns)
-  assert.equal(single.length, 15)
+  assert.equal(single.length, 22)
   assert.equal(cases.filter(item => item.turns).length, 5)
   assert.equal(new Set(cases.map(item => item.id)).size, cases.length)
   const kinds = new Set(['etp', 'tr', 'despacho', 'memorando', 'revisao', 'pergunta'])
@@ -150,4 +150,19 @@ test('lei revogada mencionada pelo próprio pedido não reprova', () => {
   const text = 'A Lei nº 8.666/1993 foi revogada e não se aplica à SOPH.IA, que segue a Lei nº 13.303/2016 para licitações e contratos, com as normas internas aplicáveis ao caso.'
   const result = checkResponse(testCase, text)
   assert.ok(!result.failures.some(item => /revogada/.test(item)))
+})
+
+test('marcador de pendência não reprova, mas colchete comum reprova', () => {
+  const ok = checkResponse(byId('etp-01'), SAFE_ETP + '\n\nO valor estimado segue pendente. [PENDENTE: informar valor estimado]')
+  assert.ok(!ok.failures.some(item => item.startsWith('placeholder')))
+  const bad = checkResponse(byId('etp-01'), SAFE_ETP + '\n\nO valor é [valor].')
+  assert.ok(bad.failures.some(item => item.startsWith('placeholder')))
+})
+
+test('afirmação proibida reprova; negação ("não foi aprovado") não reprova', () => {
+  const testCase = {id: 'x', kind: 'despacho', prompt: 'Elabore um despacho.', must: [], forbid: ['(?<!nao )foi aprovad']}
+  const bad = checkResponse(testCase, 'Elabore um despacho. Este despacho foi aprovado pela diretoria e encaminhado ao setor responsável pelas providências cabíveis.')
+  assert.ok(bad.failures.some(item => item.includes('afirma o que não pode')))
+  const good = checkResponse(testCase, 'Elabore um despacho. Este despacho não foi aprovado e segue para análise do setor responsável pelas providências cabíveis.')
+  assert.ok(!good.failures.some(item => item.includes('afirma o que não pode')))
 })

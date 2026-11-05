@@ -68,3 +68,9 @@ test('não remove valores em reais que tenham o número 8.666', async () => {
   const content = await answerWith('O valor estimado para o período é de R$ 8.666,00, conforme a pesquisa de preços.\n\nO memorando solicita a lista de férias do setor de TI até 30 de novembro.')
   assert.match(content, /R\$ 8\.666,00/)
 })
+
+test('marcador de pendência [PENDENTE: ...] é preservado; outros colchetes saem', async () => {
+  const content = await answerWith('O despacho trata do processo [PENDENTE: informar número do processo], com fundamento em [referência interna].')
+  assert.match(content, /\[PENDENTE: informar número do processo\]/)
+  assert.doesNotMatch(content, /referência interna/)
+})
