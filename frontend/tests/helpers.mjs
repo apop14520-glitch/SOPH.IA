@@ -216,6 +216,13 @@ export function createDb(initialUsers) {
               .slice(0, 13)
               .map(({role, content}) => ({role, content}))}
           }
+          if (/SELECT id,title,category,filename,mime_type,storage_key,content FROM knowledge WHERE category != \? ORDER BY id DESC LIMIT 60/.test(this.sql)) {
+            return {results: knowledge
+              .filter(item => item.category !== this.args[0])
+              .sort((a, b) => b.id - a.id)
+              .slice(0, 60)
+              .map(({id, title, category, filename, mime_type, storage_key, content}) => ({id, title, category, filename, mime_type, storage_key, content}))}
+          }
           return {results: []}
         },
         async run() { return exec(this.sql, this.args) },

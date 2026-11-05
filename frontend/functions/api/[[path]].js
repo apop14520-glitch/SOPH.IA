@@ -1,5 +1,6 @@
 const encoder = new TextEncoder()
 // Anexos enviados pelo chat são privados de quem os enviou e nunca entram na base institucional.
+import {selectExcerpts} from '../../lib/retrieval.js'
 const ATTACHMENT_CATEGORY = 'anexo de conversa'
 // Perfis aceitos e regra de senha, compartilhados pelo cadastro e pela Administração.
 const ROLES = ['padrao', 'diretor', 'gerente', 'admin']
@@ -512,9 +513,11 @@ async function institutionalReferences(env, prompt, attachments = []) {
     if (/despacho|memorando|oficio|portaria/i.test(prompt) && /despacho|memorando|oficio|portaria|redacao/i.test(heading)) score += 10
     return {...item, score}
   }).sort((a, b) => b.score - a.score || b.id - a.id)
-  const selected = scored.filter(item => item.score > 0).slice(0, 5)
+  const selected = scored.filter(item => item.score > 0).slice(0, 8)
   const fallback = selected.length ? selected : scored.filter(item => /rilc|modelo|manual|regulamento|diretriz/i.test(`${item.title} ${item.category}`)).slice(0, 3)
-  return Promise.all(fallback.map(item => extractDocument(env, item)))
+  // Converte os candidatos e envia só os trechos relevantes, dentro do limite de caracteres da base.
+  const extracted = await Promise.all(fallback.map(item => extractDocument(env, item)))
+  return selectExcerpts(extracted.filter(item => String(item.content || '').trim()), prompt)
 }
 
 // Pós-processamento das respostas da IA. O prompt pede o formato, mas o modelo nem sempre obedece,
