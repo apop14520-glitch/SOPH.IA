@@ -87,10 +87,10 @@ test('resposta vazia é reprovada', () => {
   assert.deepEqual(result.failures, ['sem resposta'])
 })
 
-test('requests.json tem 15 pedidos simples e 4 sequências, ids únicos e tipos válidos', () => {
+test('requests.json tem 15 pedidos simples e 5 sequências, ids únicos e tipos válidos', () => {
   const single = cases.filter(item => !item.turns)
   assert.equal(single.length, 15)
-  assert.equal(cases.filter(item => item.turns).length, 4)
+  assert.equal(cases.filter(item => item.turns).length, 5)
   assert.equal(new Set(cases.map(item => item.id)).size, cases.length)
   const kinds = new Set(['etp', 'tr', 'despacho', 'memorando', 'revisao', 'pergunta'])
   for (const item of single) {
@@ -130,4 +130,24 @@ test('sequências do conjunto têm turnos com tipo, pedido e termos', () => {
       assert.ok(turn.kind && turn.prompt && Array.isArray(turn.must), `${sequence.id} com turno incompleto`)
     }
   }
+})
+
+test('Lei 13.303/2016, aplicável à SOPH.IA, é citada sem aviso', () => {
+  const text = SAFE_ETP + '\n\nA contratação observa a Lei nº 13.303/2016.'
+  const result = checkResponse(byId('etp-01'), text)
+  assert.deepEqual(result.failures, [])
+  assert.deepEqual(result.warnings, [])
+})
+
+test('lei revogada (8.666/1993) citada sem o pedido mencioná-la reprova', () => {
+  const text = 'A contratação segue a Lei nº 8.666/1993 e o procedimento usual da administração pública, com os prazos e documentos exigidos pela norma aplicável ao caso concreto analisado.'
+  const result = checkResponse(byId('pergunta-01'), text)
+  assert.ok(result.failures.some(item => /revogada/.test(item)), 'deveria reprovar a citação da lei revogada')
+})
+
+test('lei revogada mencionada pelo próprio pedido não reprova', () => {
+  const testCase = {id: 'x', kind: 'pergunta', prompt: 'A Lei 8.666/1993 ainda vale para a SOPH.IA?', must: []}
+  const text = 'A Lei nº 8.666/1993 foi revogada e não se aplica à SOPH.IA, que segue a Lei nº 13.303/2016 para licitações e contratos, com as normas internas aplicáveis ao caso.'
+  const result = checkResponse(testCase, text)
+  assert.ok(!result.failures.some(item => /revogada/.test(item)))
 })
