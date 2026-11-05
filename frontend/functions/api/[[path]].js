@@ -590,9 +590,20 @@ function formatarTitulos(texto) {
   }).join('\n')
 }
 
+// Lei nº 8.666/1993 não se aplica à SOPH.IA: as frases que a citam saem da resposta. Só casa a citação da lei
+// (com "lei" antes ou com o ano/abreviação após a barra), para não confundir com valores como "R$ 8.666,00".
+const REVOKED_LAW_MENTION = /\b(lei\s*(n[ºo°]\s*)?8\.?666\b|8\.?666\/\d{2,4}\b)/i
+function removeRevokedLaw(texto) {
+  return String(texto || '').split('\n').flatMap(linha => {
+    if (!REVOKED_LAW_MENTION.test(linha)) return [linha]
+    const restante = linha.split(/(?<=[.!?;])\s+/).filter(frase => !REVOKED_LAW_MENTION.test(frase)).join(' ')
+    return restante.trim() ? [restante] : []
+  }).join('\n')
+}
+
 function postProcessAnswer(texto) {
   const original = String(texto || '')
-  const limpo = formatarTitulos(removeColchetes(removeSecoesInternas(original))).replace(/\n{3,}/g, '\n\n').trim()
+  const limpo = formatarTitulos(removeColchetes(removeRevokedLaw(removeSecoesInternas(original)))).replace(/\n{3,}/g, '\n\n').trim()
   // Se a limpeza esvaziar a resposta, mantém o texto original para não perder o conteúdo.
   return limpo || original.trim()
 }
