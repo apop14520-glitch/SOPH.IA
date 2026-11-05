@@ -32,9 +32,14 @@ mkdirSync(outDir, {recursive: true})
 
 for (const testCase of cases) {
   const conversation = await api('POST', '/conversations', {title: `Avaliação ${testCase.id}`}, token)
-  const reply = await api('POST', `/conversations/${conversation.id}/messages`, {content: testCase.prompt, attachment_ids: [], web_search: false}, token)
-  writeFileSync(join(outDir, `${testCase.id}.txt`), reply.content || '')
-  console.log(`gerado  ${testCase.id}`)
+  // Sequências enviam os turnos na mesma conversa, na ordem, como um usuário faria no chat.
+  const turns = testCase.turns || [testCase]
+  for (const [index, turn] of turns.entries()) {
+    const reply = await api('POST', `/conversations/${conversation.id}/messages`, {content: turn.prompt, attachment_ids: [], web_search: false}, token)
+    const file = testCase.turns ? `${testCase.id}.t${index + 1}.txt` : `${testCase.id}.txt`
+    writeFileSync(join(outDir, file), reply.content || '')
+    console.log(`gerado  ${file}`)
+  }
 }
 
 console.log(`\nRespostas gravadas em ${outDir}. Confira com: node evals/run-checks.mjs`)

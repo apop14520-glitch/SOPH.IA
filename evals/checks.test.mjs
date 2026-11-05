@@ -87,13 +87,47 @@ test('resposta vazia é reprovada', () => {
   assert.deepEqual(result.failures, ['sem resposta'])
 })
 
-test('requests.json tem 15 casos, ids únicos e tipos válidos', () => {
-  assert.equal(cases.length, 15)
-  assert.equal(new Set(cases.map(item => item.id)).size, 15)
+test('requests.json tem 15 pedidos simples e 4 sequências, ids únicos e tipos válidos', () => {
+  const single = cases.filter(item => !item.turns)
+  assert.equal(single.length, 15)
+  assert.equal(cases.filter(item => item.turns).length, 4)
+  assert.equal(new Set(cases.map(item => item.id)).size, cases.length)
   const kinds = new Set(['etp', 'tr', 'despacho', 'memorando', 'revisao', 'pergunta'])
-  for (const item of cases) {
+  for (const item of single) {
     assert.ok(kinds.has(item.kind), `tipo inválido em ${item.id}`)
     assert.ok(item.prompt.length > 20, `pedido curto em ${item.id}`)
     assert.ok(Array.isArray(item.must) && item.must.length > 0, `sem termos obrigatórios em ${item.id}`)
+  }
+})
+
+import {checkRepetition, overlapRatio} from './checks.mjs'
+
+const DOC_A = 'A necessidade decorre do volume de projetos da unidade e das alternativas de mercado comparadas com a solução proposta pela equipe técnica responsável'
+const DOC_B = 'O despacho encaminha o processo à diretoria competente para análise, com prazo de cinco dias úteis e indicação do servidor responsável pelo acompanhamento'
+
+test('repetição: texto idêntico chega a 100%, texto diferente fica perto de 0%', () => {
+  assert.equal(overlapRatio(DOC_A, DOC_A), 1)
+  assert.equal(overlapRatio(DOC_A, DOC_B), 0)
+})
+
+test('repetição: resposta que copia trechos da anterior reprova; resposta nova passa', () => {
+  const copied = `${DOC_A}. Nova introdução do pedido atual.`
+  assert.match(checkRepetition(DOC_A, copied).failure, /repete/)
+  assert.equal(checkRepetition(DOC_A, DOC_B).failure, null)
+  assert.equal(checkRepetition(DOC_A, DOC_B).warning, null)
+})
+
+test('repetição: textos curtos não geram falso positivo', () => {
+  assert.equal(overlapRatio('sim', 'sim'), 0)
+})
+
+test('sequências do conjunto têm turnos com tipo, pedido e termos', () => {
+  const sequences = cases.filter(item => item.turns)
+  assert.ok(sequences.length >= 4)
+  for (const sequence of sequences) {
+    assert.ok(sequence.turns.length >= 2, `${sequence.id} precisa de ao menos dois turnos`)
+    for (const turn of sequence.turns) {
+      assert.ok(turn.kind && turn.prompt && Array.isArray(turn.must), `${sequence.id} com turno incompleto`)
+    }
   }
 })

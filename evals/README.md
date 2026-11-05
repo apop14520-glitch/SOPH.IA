@@ -7,7 +7,8 @@ Referências legais que não estão no pedido geram aviso para revisão humana, 
 
 ## Arquivos
 
-- `requests.json`: os 15 pedidos e os termos que cada resposta precisa tratar.
+- `requests.json`: os 15 pedidos simples e os termos que cada resposta precisa tratar. Também há 4 **sequências**
+  (campo `turns`): duas ou três perguntas seguidas na mesma conversa, como um usuário faz no chat.
 - `checks.mjs`: as regras. Cada regra indica o motivo da reprovação.
 - `run-checks.mjs`: confere respostas já geradas em `evals/out/` (ou em outra pasta informada).
 - `run-live.mjs`: gera as respostas no ambiente publicado e grava em `evals/out/`.
@@ -21,7 +22,8 @@ Testes do verificador (não usam a IA):
 node --test evals/checks.test.mjs
 ```
 
-Gerar respostas no site publicado (cria 15 conversas "Avaliação <id>" na conta informada):
+Gerar respostas no site publicado (cria 19 conversas "Avaliação <id>" na conta informada: uma por pedido ou sequência).
+Use de preferência uma conta de teste: a tela não tem opção para apagar conversas.
 
 ```bash
 SOPH_EVAL_URL=https://soph-ia.pages.dev SOPH_EVAL_EMAIL=seu-email@soph.ro.gov.br SOPH_EVAL_PASSWORD='sua-senha' node evals/run-live.mjs
@@ -39,6 +41,9 @@ O comando sai com código 1 se algum caso falhar ou se alguma resposta estiver f
 
 - As regras pegam problemas de forma, de estrutura e de cobertura do pedido. Não substituem a revisão
   jurídica nem verificam se os fatos estão corretos.
+- **Repetição entre turnos:** em cada sequência, a resposta de cada turno é comparada com as anteriores da mesma
+  conversa, por trechos de 8 palavras. Sobreposição acima de 15% gera aviso; acima de 30%, reprova. Os limites
+  foram definidos antes de haver dados reais; ajuste-os em `REPETITION` (`checks.mjs`) depois da primeira rodada.
 - Os termos obrigatórios de cada pedido são uma checagem simples de cobertura. Uma resposta correta com
   outras palavras pode ser reprovada; nesse caso, ajuste o termo em `requests.json`.
 - Respostas geradas ficam em `evals/out/`, pasta ignorada pelo Git.
