@@ -58,3 +58,31 @@ export function checkResponse(testCase, text) {
   }
   return {id: testCase.id, failures, warnings}
 }
+
+// Repetição entre respostas da mesma conversa: parte das sequências de 8 palavras da resposta atual que já aparece
+// nas respostas anteriores. Medido sobre palavras normalizadas (sem acento, sem pontuação), então grafia não engana.
+export const REPETITION = {warn: 0.15, fail: 0.3}
+const wordsOf = text => normalize(text).match(/[a-z0-9]+/g) || []
+
+export function overlapRatio(previous, current, size = 8) {
+  const before = wordsOf(previous)
+  const now = wordsOf(current)
+  if (before.length < size || now.length < size) return 0
+  const known = new Set()
+  for (let i = 0; i + size <= before.length; i++) known.add(before.slice(i, i + size).join(' '))
+  let total = 0
+  let shared = 0
+  for (let i = 0; i + size <= now.length; i++) {
+    total++
+    if (known.has(now.slice(i, i + size).join(' '))) shared++
+  }
+  return total ? shared / total : 0
+}
+
+export function checkRepetition(previousText, text) {
+  const ratio = overlapRatio(previousText, text)
+  const percent = `${Math.round(ratio * 100)}%`
+  if (ratio > REPETITION.fail) return {ratio, failure: `repete ${percent} de trechos das respostas anteriores da conversa`, warning: null}
+  if (ratio > REPETITION.warn) return {ratio, failure: null, warning: `repete ${percent} de trechos das respostas anteriores, conferir`}
+  return {ratio, failure: null, warning: null}
+}

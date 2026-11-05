@@ -88,5 +88,95 @@
     "kind": "pergunta",
     "prompt": "Quais documentos normalmente compõem a fase preparatória de uma contratação?",
     "must": ["document"]
+  },
+  {
+    "id": "seq-01",
+    "kind": "sequencia",
+    "turns": [
+      {
+        "kind": "etp",
+        "prompt": "Elabore um Estudo Técnico Preliminar para a contratação de serviço de dragagem de manutenção do canal de acesso ao terminal fluvial de Porto Velho, com periodicidade anual.",
+        "must": [
+          "dragag",
+          "risco",
+          "valor"
+        ]
+      },
+      {
+        "kind": "despacho",
+        "prompt": "Agora elabore um despacho encaminhando esse estudo à Diretoria Técnica e Operacional para análise técnica.",
+        "must": [
+          "despacho",
+          "diretoria tecnica"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "seq-02",
+    "kind": "sequencia",
+    "turns": [
+      {
+        "kind": "etp",
+        "prompt": "Elabore um Estudo Técnico Preliminar para aquisição de dois geradores de energia de reserva para a sede da SOPH em Porto Velho.",
+        "must": [
+          "gerador",
+          "alternativ",
+          "risco"
+        ]
+      },
+      {
+        "kind": "memorando",
+        "prompt": "Agora elabore um memorando à Presidência informando que o estudo sobre os geradores foi concluído e aguarda aprovação.",
+        "must": [
+          "memorando",
+          "presidencia"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "seq-03",
+    "kind": "sequencia",
+    "turns": [
+      {
+        "kind": "tr",
+        "prompt": "Elabore um Termo de Referência para contratação de empresa especializada em manutenção predial da sede administrativa, com vigência de 12 meses.",
+        "must": [
+          "manutenc",
+          "prazo",
+          "obrigac"
+        ]
+      },
+      {
+        "kind": "despacho",
+        "prompt": "Agora elabore um despacho pedindo à Assessoria Jurídica a análise do termo de referência que acabamos de elaborar.",
+        "must": [
+          "despacho",
+          "assessoria juridica"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "seq-04",
+    "kind": "sequencia",
+    "turns": [
+      {
+        "kind": "pergunta",
+        "prompt": "Quais documentos são exigidos para abrir um processo de contratação de serviços comuns?",
+        "must": [
+          "document"
+        ]
+      },
+      {
+        "kind": "memorando",
+        "prompt": "Agora elabore um memorando à Diretoria Administrativa e Financeira solicitando os documentos que você listou para iniciar o processo.",
+        "must": [
+          "memorando",
+          "diretoria administrativa"
+        ]
+      }
+    ]
   }
 ]
