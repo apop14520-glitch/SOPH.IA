@@ -769,6 +769,25 @@ async function handler(context) {
       await env.DB.prepare('UPDATE conversations SET title=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(title, id).run()
       return json({id, title})
     }
+    // Exclui a conversa com as mensagens. Anexos enviados só nela também saem; os usados em outra conversa do usuário ficam.
+    if (match && method === 'DELETE') {
+      const id = Number(match[1])
+      const conversation = await env.DB.prepare('SELECT id FROM conversations WHERE id=? AND user_id=?').bind(id, user.id).first()
+      if (!conversation) return fail('Conversa não encontrada.', 404)
+      const mine = (await env.DB.prepare('SELECT attachment_ids FROM chat_messages WHERE conversation_id=?').bind(id).all()).results
+      const others = (await env.DB.prepare('SELECT m.attachment_ids FROM chat_messages m JOIN conversations c ON c.id=m.conversation_id WHERE c.user_id=? AND m.conversation_id<>?').bind(user.id, id).all()).results
+      const shared = new Set(others.flatMap(item => parseJson(item.attachment_ids) || []).map(Number))
+      const attachmentIds = [...new Set(mine.flatMap(item => parseJson(item.attachment_ids) || []).map(Number))].filter(item => item && !shared.has(item))
+      for (const attachmentId of attachmentIds) {
+        const row = await env.DB.prepare('SELECT id,storage_key FROM knowledge WHERE id=? AND owner_id=? AND category=?').bind(attachmentId, user.id, ATTACHMENT_CATEGORY).first()
+        if (!row) continue
+        if (row.storage_key && env.DOCUMENTS) await env.DOCUMENTS.delete(row.storage_key).catch(() => {})
+        await env.DB.prepare('DELETE FROM knowledge WHERE id=?').bind(row.id).run()
+      }
+      await env.DB.prepare('DELETE FROM chat_messages WHERE conversation_id=?').bind(id).run()
+      await env.DB.prepare('DELETE FROM conversations WHERE id=? AND user_id=?').bind(id, user.id).run()
+      return json({message: 'Conversa excluída.'})
+    }
     match = path.match(/^\/conversations\/(\d+)\/messages$/)
     if (match && method === 'POST') {
       const id = Number(match[1])

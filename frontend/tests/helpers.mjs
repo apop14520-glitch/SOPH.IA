@@ -91,6 +91,10 @@ export function createDb(initialUsers) {
       return row ? {id: row.id, user_id: row.user_id} : null
     }
     if (/FROM settings WHERE key=\?/.test(sql)) return null
+    if (/^SELECT id,storage_key FROM knowledge WHERE id=\? AND owner_id=\? AND category=\?$/.test(sql)) {
+      const row = knowledge.find(item => item.id === args[0] && item.owner_id === args[1] && item.category === args[2])
+      return row ? {id: row.id, storage_key: row.storage_key} : null
+    }
     if (/^SELECT id,title,category,filename,mime_type,created_at FROM knowledge WHERE id=\?$/.test(sql)) {
       const row = knowledge.find(item => item.id === args[0])
       return row ? {...row} : null
@@ -153,6 +157,21 @@ export function createDb(initialUsers) {
       if (row) row.content = args[0]
       return {meta: {changes: row ? 1 : 0}}
     }
+    if (/^DELETE FROM chat_messages WHERE conversation_id=\?$/.test(sql)) {
+      const before = chatMessages.length
+      for (let i = chatMessages.length - 1; i >= 0; i--) if (chatMessages[i].conversation_id === args[0]) chatMessages.splice(i, 1)
+      return {meta: {changes: before - chatMessages.length}}
+    }
+    if (/^DELETE FROM conversations WHERE id=\? AND user_id=\?$/.test(sql)) {
+      const index = conversations.findIndex(item => item.id === args[0] && item.user_id === args[1])
+      if (index >= 0) conversations.splice(index, 1)
+      return {meta: {changes: index >= 0 ? 1 : 0}}
+    }
+    if (/^DELETE FROM knowledge WHERE id=\?$/.test(sql)) {
+      const index = knowledge.findIndex(item => item.id === args[0])
+      if (index >= 0) knowledge.splice(index, 1)
+      return {meta: {changes: index >= 0 ? 1 : 0}}
+    }
     if (/^INSERT INTO chat_messages/.test(sql)) {
       const role = sql.includes("'assistant'") ? 'assistant' : 'user'
       const row = {id: Math.max(nextMessageId - 1, ...chatMessages.map(item => item.id)) + 1, conversation_id: args[0], role, content: args[1], sources: '[]'}
@@ -208,6 +227,13 @@ export function createDb(initialUsers) {
             return {results: knowledge
               .filter(item => item.category !== this.args[0] && item.content === '' && item.storage_key != null)
               .map(({id, filename, mime_type, storage_key}) => ({id, filename, mime_type, storage_key}))}
+          }
+          if (/^SELECT attachment_ids FROM chat_messages WHERE conversation_id=\?$/.test(this.sql)) {
+            return {results: chatMessages.filter(item => item.conversation_id === this.args[0]).map(({attachment_ids}) => ({attachment_ids}))}
+          }
+          if (/FROM chat_messages m JOIN conversations c ON c\.id=m\.conversation_id WHERE c\.user_id=\? AND m\.conversation_id<>\?/.test(this.sql)) {
+            const owned = conversations.filter(item => item.user_id === this.args[0] && item.id !== this.args[1]).map(item => item.id)
+            return {results: chatMessages.filter(item => owned.includes(item.conversation_id)).map(({attachment_ids}) => ({attachment_ids}))}
           }
           if (/SELECT role,content FROM chat_messages WHERE conversation_id=\?/.test(this.sql)) {
             return {results: chatMessages
