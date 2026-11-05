@@ -10,6 +10,12 @@ const AI_META = /\b(sou (uma|um) (ia|inteligencia artificial)|como (uma )?(ia|in
 const SEI_FIELDS = /(local e data|nome d[oa] (autoridade|responsavel|servidor)|\bcargo\s*:|n[ºo°]\s*\d+\s*\/\s*\d{4})/
 const DOCUMENT_HEADING = /^#{1,6}\s*(despacho|memorando|termo de referencia|estudo tecnico preliminar)\b/m
 const REFERENCE = /\b(lei|decreto|portaria|resolucao|instrucao normativa)\s*(n[ºo°]\s*)?(\d[\d.]*(?:\/\d{2,4})?)/g
+// Normas que se aplicam à SOPH.IA: citar sem aviso. Leis revogadas: citar sem o pedido mencionar reprova.
+const APPLICABLE_LAWS = new Set(['13.303/2016'])
+const REVOKED_LAWS = [
+  {prefix: '8.666', name: 'a Lei nº 8.666/1993'},
+  {prefix: '10.520', name: 'a Lei nº 10.520/2002'},
+]
 
 // Remove acentos e põe em minúsculas, para comparar termos sem depender da grafia.
 export function normalize(text) {
@@ -54,7 +60,15 @@ export function checkResponse(testCase, text) {
   }
 
   for (const match of plain.matchAll(REFERENCE)) {
-    if (!prompt.includes(match[3])) warnings.push(`referência não citada no pedido, conferir: "${match[0].trim()}"`)
+    const number = match[3]
+    if (prompt.includes(number)) continue
+    const revoked = REVOKED_LAWS.find(law => number.split('/')[0] === law.prefix)
+    if (revoked) {
+      failures.push(`cita ${revoked.name}, revogada; a SOPH.IA segue a Lei nº 13.303/2016`)
+      continue
+    }
+    if (APPLICABLE_LAWS.has(number)) continue
+    warnings.push(`referência não citada no pedido, conferir: "${match[0].trim()}"`)
   }
   return {id: testCase.id, failures, warnings}
 }

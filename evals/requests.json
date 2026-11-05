@@ -178,5 +178,28 @@
         ]
       }
     ]
+  },
+  {
+    "id": "seq-05",
+    "kind": "sequencia",
+    "turns": [
+      {
+        "kind": "etp",
+        "prompt": "Elabore um Estudo Técnico Preliminar para a contratação de serviço de manutenção de equipamentos de informática da sede da SOPH em Porto Velho.",
+        "must": [
+          "informatica",
+          "manutenc",
+          "risco"
+        ]
+      },
+      {
+        "kind": "etp",
+        "prompt": "Agora elabore outro Estudo Técnico Preliminar, para a contratação de serviço de limpeza predial da mesma sede, seguindo o modelo institucional.",
+        "must": [
+          "limpez",
+          "risco"
+        ]
+      }
+    ]
   }
 ]

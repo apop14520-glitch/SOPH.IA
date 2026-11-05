@@ -56,3 +56,15 @@ test('não altera o corpo do texto nem nomes escritos em caixa alta', async () =
   const text = 'JOÃO DA SILVA assina a presente.\n\nO processo segue para a Assessoria Jurídica.'
   assert.equal(await answerWith(text), text)
 })
+
+test('remove a frase que cita a Lei nº 8.666/1993 e mantém o restante', async () => {
+  const content = await answerWith('A contratação observa a Lei nº 8.666/1993 e os prazos usuais.\n\nO memorando solicita a lista de férias do setor de TI até 30 de novembro, conforme a Lei nº 13.303/2016.')
+  assert.doesNotMatch(content, /8\.?666/)
+  assert.match(content, /13\.303\/2016/)
+  assert.match(content, /lista de férias/)
+})
+
+test('não remove valores em reais que tenham o número 8.666', async () => {
+  const content = await answerWith('O valor estimado para o período é de R$ 8.666,00, conforme a pesquisa de preços.\n\nO memorando solicita a lista de férias do setor de TI até 30 de novembro.')
+  assert.match(content, /R\$ 8\.666,00/)
+})

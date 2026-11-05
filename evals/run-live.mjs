@@ -8,6 +8,13 @@ import {fileURLToPath} from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const cases = JSON.parse(readFileSync(join(here, 'requests.json'), 'utf8'))
+// SOPH_EVAL_ONLY=seq-05,etp-01 gera só os casos listados (útil para acrescentar um caso sem refazer tudo).
+const only = String(process.env.SOPH_EVAL_ONLY || '').split(',').map(item => item.trim()).filter(Boolean)
+const selected = only.length ? cases.filter(item => only.includes(item.id)) : cases
+if (only.length && !selected.length) {
+  console.error(`Nenhum caso com os ids informados em SOPH_EVAL_ONLY: ${only.join(', ')}`)
+  process.exit(2)
+}
 const outDir = join(here, 'out')
 const base = String(process.env.SOPH_EVAL_URL || '').replace(/\/$/, '')
 const email = process.env.SOPH_EVAL_EMAIL
@@ -30,7 +37,7 @@ async function api(method, path, body, token) {
 const {access_token: token} = await api('POST', '/auth/login', {email, password})
 mkdirSync(outDir, {recursive: true})
 
-for (const testCase of cases) {
+for (const testCase of selected) {
   const conversation = await api('POST', '/conversations', {title: `Avaliação ${testCase.id}`}, token)
   // Sequências enviam os turnos na mesma conversa, na ordem, como um usuário faria no chat.
   const turns = testCase.turns || [testCase]
