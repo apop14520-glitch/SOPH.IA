@@ -87,3 +87,6 @@ export function buildSystemPrompt({mode = null, specialty = null} = {}) {
 
 // Pergunta de esclarecimento quando o modo não está claro. Não chama a IA.
 export const CLARIFICATION = 'Qual tarefa você quer que eu faça? Posso elaborar uma minuta, revisar um texto, analisar lacunas e riscos, consultar normas ou comparar dois documentos. Por exemplo: "Elabore um despacho sobre…", "Revise o documento anexado" ou "Quais normas tratam de…".'
+
+// Aviso exibido quando a pesquisa web falha: a resposta segue só com a base institucional, e a pessoa é informada.
+export const WEB_UNAVAILABLE_NOTE = 'Aviso: a pesquisa na web não esteve disponível nesta resposta. O texto se baseia apenas na base institucional e nos dados informados; confirme as referências normativas antes de usar.'

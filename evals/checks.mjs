@@ -41,7 +41,7 @@ export function checkResponse(testCase, text) {
   const prompt = normalize(testCase.prompt)
 
   // Marcadores de pendência da especificação ([PENDENTE: ...] ou [informar ...]) são permitidos.
-  if (PLACEHOLDER.test(plain.replace(/\[(pendente|informar)[^\]\n]{0,160}\]/g, ''))) failures.push('placeholder: colchetes ou "informação a completar" na resposta')
+  if (PLACEHOLDER.test(plain.replace(/\[(pendente|informar|inserir)[^\]\n]{0,160}\]/g, ''))) failures.push('placeholder: colchetes ou "informação a completar" na resposta')
   for (const line of capsLines(body)) failures.push(`caixa alta em título ou linha: "${line.trim().slice(0, 80)}"`)
   if (INTERNAL_SECTION.test(plain)) failures.push('seção interna (ex.: Observação, Validação necessária)')
   if (AI_META.test(plain)) failures.push('comentário sobre a IA ou sobre o processo de geração')

@@ -1,7 +1,7 @@
 const encoder = new TextEncoder()
 // Anexos enviados pelo chat são privados de quem os enviou e nunca entram na base institucional.
 import {selectExcerpts} from '../../lib/retrieval.js'
-import {CLARIFICATION, buildSystemPrompt, detectMode, detectSpecialty} from '../../lib/behavior.js'
+import {CLARIFICATION, WEB_UNAVAILABLE_NOTE, buildSystemPrompt, detectMode, detectSpecialty} from '../../lib/behavior.js'
 const ATTACHMENT_CATEGORY = 'anexo de conversa'
 // Perfis aceitos e regra de senha, compartilhados pelo cadastro e pela Administração.
 const ROLES = ['padrao', 'diretor', 'gerente', 'admin']
@@ -569,7 +569,7 @@ function removeSecoesInternas(texto) {
 // Marcadores de pendência da especificação são preservados; os demais colchetes são removidos.
 function removeColchetes(texto) {
   const marcadores = []
-  const protegido = String(texto).replace(/\[(?:PENDENTE|informar)[^\]\n]{0,160}\]/gi, marcador => {
+  const protegido = String(texto).replace(/\[(?:PENDENTE|informar|inserir)[^\]\n]{0,160}\]/gi, marcador => {
     marcadores.push(marcador)
     return `\u0000${marcadores.length - 1}\u0000`
   })
@@ -649,7 +649,7 @@ async function generateAnswer(env, prompt, history, attachments, institutional =
     } catch (error) {
       console.error('Pesquisa web indisponível:', error?.message || error)
       const fallback = await runInstitutionalAI(env, messages, 6000)
-      return {text: fallback.trim(), sources: []}
+      return {text: `${fallback.trim()}\n\n${WEB_UNAVAILABLE_NOTE}`, sources: []}
     }
   }
   const answer = await runInstitutionalAI(env, messages, 6000)

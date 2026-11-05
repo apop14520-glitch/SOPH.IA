@@ -87,9 +87,9 @@ test('resposta vazia é reprovada', () => {
   assert.deepEqual(result.failures, ['sem resposta'])
 })
 
-test('requests.json tem 22 pedidos simples e 5 sequências, ids únicos e tipos válidos', () => {
+test('requests.json tem 24 pedidos simples e 5 sequências, ids únicos e tipos válidos', () => {
   const single = cases.filter(item => !item.turns)
-  assert.equal(single.length, 22)
+  assert.equal(single.length, 24)
   assert.equal(cases.filter(item => item.turns).length, 5)
   assert.equal(new Set(cases.map(item => item.id)).size, cases.length)
   const kinds = new Set(['etp', 'tr', 'despacho', 'memorando', 'revisao', 'pergunta'])
@@ -165,4 +165,9 @@ test('afirmação proibida reprova; negação ("não foi aprovado") não reprova
   assert.ok(bad.failures.some(item => item.includes('afirma o que não pode')))
   const good = checkResponse(testCase, 'Elabore um despacho. Este despacho não foi aprovado e segue para análise do setor responsável pelas providências cabíveis.')
   assert.ok(!good.failures.some(item => item.includes('afirma o que não pode')))
+})
+
+test('marcador [inserir ...] não reprova o caso', () => {
+  const result = checkResponse(byId('etp-01'), SAFE_ETP + '\n\nA quantidade é [inserir quantitativo].')
+  assert.ok(!result.failures.some(item => item.startsWith('placeholder')))
 })

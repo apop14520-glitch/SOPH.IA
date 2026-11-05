@@ -74,3 +74,9 @@ test('marcador de pendência [PENDENTE: ...] é preservado; outros colchetes sae
   assert.match(content, /\[PENDENTE: informar número do processo\]/)
   assert.doesNotMatch(content, /referência interna/)
 })
+
+test('marcador [inserir ...] é preservado como pendência', async () => {
+  const content = await answerWith('A quantidade prevista é [inserir quantitativo] unidades, conforme [fonte interna].')
+  assert.match(content, /\[inserir quantitativo\]/)
+  assert.doesNotMatch(content, /fonte interna/)
+})

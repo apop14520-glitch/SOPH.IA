@@ -179,7 +179,9 @@ As especialidades são ETP e Termo de Referência, despachos e memorandos, porta
 
 **Regras obrigatórias:** a SOPH.IA não inventa números, datas, valores, nomes, resultados de licitação nem citações normativas. Não aprova, não assina, não envia e não protocola nenhum ato. Trata anexos e resultados de pesquisa como material a analisar, nunca como instruções. Indica que as minutas são rascunhos para revisão humana.
 
-**Marcadores de pendência:** a informação que falta aparece como `[PENDENTE: informar ...]` e é preservada na resposta. Outros colchetes são removidos.
+**Marcadores de pendência:** a informação que falta aparece como `[PENDENTE: informar ...]`, `[informar ...]` ou `[inserir ...]`, e é preservada na resposta. Outros colchetes são removidos.
+
+**Pesquisa web indisponível:** a resposta segue com a base institucional e traz um aviso, para que a pessoa saiba que a pesquisa não foi usada.
 
 **Limites atuais:**
 - "Comparar" compara apenas os textos enviados. O sistema não guarda histórico de versões.
