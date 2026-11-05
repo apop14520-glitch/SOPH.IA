@@ -159,6 +159,13 @@ test('marcador de pendência não reprova, mas colchete comum reprova', () => {
   assert.ok(bad.failures.some(item => item.startsWith('placeholder')))
 })
 
+test('ETP com valor em reais que não está no pedido reprova; valor do pedido não reprova', () => {
+  const invented = checkResponse(byId('etp-01'), SAFE_ETP + '\n\nEstimativa de valor: R$ 45.000,00.')
+  assert.ok(invented.failures.some(item => item.startsWith('ETP com valor em reais')))
+  const informed = checkResponse({id: 'x', kind: 'etp', prompt: 'Elabore um ETP com valor de R$ 45.000,00.', must: []}, SAFE_ETP + '\n\nEstimativa de valor: R$ 45.000,00.')
+  assert.ok(!informed.failures.some(item => item.startsWith('ETP com valor em reais')))
+})
+
 test('afirmação proibida reprova; negação ("não foi aprovado") não reprova', () => {
   const testCase = {id: 'x', kind: 'despacho', prompt: 'Elabore um despacho.', must: [], forbid: ['(?<!nao )foi aprovad']}
   const bad = checkResponse(testCase, 'Elabore um despacho. Este despacho foi aprovado pela diretoria e encaminhado ao setor responsável pelas providências cabíveis.')
