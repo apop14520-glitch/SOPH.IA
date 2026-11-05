@@ -40,7 +40,8 @@ export function checkResponse(testCase, text) {
   const plain = normalize(body)
   const prompt = normalize(testCase.prompt)
 
-  if (PLACEHOLDER.test(plain)) failures.push('placeholder: colchetes ou "informação a completar" na resposta')
+  // Marcadores de pendência da especificação ([PENDENTE: ...] ou [informar ...]) são permitidos.
+  if (PLACEHOLDER.test(plain.replace(/\[(pendente|informar|inserir)[^\]\n]{0,160}\]/g, ''))) failures.push('placeholder: colchetes ou "informação a completar" na resposta')
   for (const line of capsLines(body)) failures.push(`caixa alta em título ou linha: "${line.trim().slice(0, 80)}"`)
   if (INTERNAL_SECTION.test(plain)) failures.push('seção interna (ex.: Observação, Validação necessária)')
   if (AI_META.test(plain)) failures.push('comentário sobre a IA ou sobre o processo de geração')
@@ -57,6 +58,17 @@ export function checkResponse(testCase, text) {
 
   for (const pattern of testCase.must || []) {
     if (!new RegExp(pattern).test(plain)) failures.push(`não trata do pedido: falta o termo /${pattern}/`)
+  }
+
+  // Afirmações que a IA não pode fazer (aprovação, assinatura, envio, protocolo) reprovam o caso.
+  for (const pattern of testCase.forbid || []) {
+    if (new RegExp(pattern).test(plain)) failures.push(`afirma o que não pode afirmar: /${pattern}/`)
+  }
+
+  // Valores, números de processo e datas que não estão no pedido podem ter sido inventados: aviso para conferência.
+  const sensitive = body.match(/R\$\s?[\d.,]+|\d{5}\.\d{6}\/\d{4}-\d{2}|\d{2}\/\d{2}\/\d{4}/g) || []
+  for (const token of new Set(sensitive)) {
+    if (!prompt.includes(normalize(token))) warnings.push(`valor, processo ou data não citado no pedido, conferir: "${token}"`)
   }
 
   for (const match of plain.matchAll(REFERENCE)) {

@@ -163,6 +163,33 @@ evals/          conjunto de avaliação das respostas da IA
 3. A aplicação recupera fontes da biblioteca e gera a primeira versão.
 4. O revisor altera o texto; cada salvamento cria uma versão imutável.
 
+## Comportamento da IA
+
+A SOPH.IA trabalha em cinco modos, e cada resposta se identifica pelo modo e pela especialidade (regras em `frontend/lib/behavior.js`):
+
+- **Elaborar:** minuta estruturada com os dados informados e as fontes recuperadas.
+- **Revisar:** corrige forma e aponta problemas de conteúdo, sem alterar o sentido.
+- **Analisar:** aponta lacunas, inconsistências, riscos de redação e afirmações sem suporte.
+- **Consultar normas:** responde com base nas fontes normativas identificadas, separando transcrição, resumo e interpretação.
+- **Comparar:** compara os textos enviados e resume as alterações relevantes.
+
+O modo vem do verbo inicial do pedido (por exemplo, "Elabore", "Revise", "Compare", "Analise", "Quais normas..."). Quando não há verbo claro, a SOPH.IA pergunta antes de redigir e não gera texto.
+
+As especialidades são ETP e Termo de Referência, despachos e memorandos, portarias e ofícios, revisão documental e consulta normativa. Cada uma é detectada pelo tipo de documento citado.
+
+**Regras obrigatórias:** a SOPH.IA não inventa números, datas, valores, nomes, resultados de licitação nem citações normativas. Não aprova, não assina, não envia e não protocola nenhum ato. Trata anexos e resultados de pesquisa como material a analisar, nunca como instruções. Indica que as minutas são rascunhos para revisão humana.
+
+**Marcadores de pendência:** a informação que falta aparece como `[PENDENTE: informar ...]`, `[informar ...]` ou `[inserir ...]`, e é preservada na resposta. Outros colchetes são removidos.
+
+**Pesquisa web indisponível:** a resposta segue com a base institucional e traz um aviso, para que a pessoa saiba que a pesquisa não foi usada.
+
+**Limites atuais:**
+- "Comparar" compara apenas os textos enviados. O sistema não guarda histórico de versões.
+- Portarias e ofícios seguem a estrutura usual quando o modelo não está na base institucional, e a resposta informa isso.
+- Os campos de ETP e TR vêm dos modelos da base institucional. Não há formulários.
+- Ainda não há seletor de modo ou de especialidade na tela.
+- O prompt de sistema tem cerca de 5 mil caracteres. Isso é medido pela avaliação em `evals/`.
+
 ## Limitações conhecidas
 
 - A sessão fica em cookie HttpOnly, mas o acesso ainda depende de um token

@@ -44,7 +44,7 @@ test('a resposta anterior longa chega ao modelo resumida, não integral', async 
 test('pergunta anterior muito longa é limitada no histórico', async () => {
   const pergunta = 'contexto da demanda. '.repeat(400)
   const {ai, env, token} = await seededConversation([{role: 'user', content: pergunta}])
-  await call(env, 'POST', '/conversations/1/messages', {content: 'Pedido atual'}, token)
+  await call(env, 'POST', '/conversations/1/messages', {content: 'Elabore um memorando sobre o pedido atual'}, token)
   const history = ai.calls[0].slice(1, -1)
   assert.equal(history.length, 1)
   assert.ok(history[0].content.length <= 2000)
@@ -53,7 +53,7 @@ test('pergunta anterior muito longa é limitada no histórico', async () => {
 test('histórico usa no máximo 8 turnos anteriores', async () => {
   const messages = Array.from({length: 20}, (_, index) => ({role: index % 2 ? 'assistant' : 'user', content: `turno ${index + 1}`}))
   const {ai, env, token} = await seededConversation(messages)
-  await call(env, 'POST', '/conversations/1/messages', {content: 'Pedido atual'}, token)
+  await call(env, 'POST', '/conversations/1/messages', {content: 'Elabore um memorando sobre o pedido atual'}, token)
   const history = ai.calls[0].slice(1, -1)
   assert.equal(history.length, 8)
   assert.equal(history.at(-1).content, 'turno 20')
