@@ -1,25 +1,31 @@
 import React,{useContext,useEffect,useState} from 'react'
 import {Avatar,Box,Button,Dialog,DialogActions,DialogContent,DialogTitle,Divider,Drawer,IconButton,InputAdornment,List,ListItemButton,ListItemIcon,ListItemText,Menu,MenuItem,TextField,Tooltip,Typography,useMediaQuery,useTheme} from '@mui/material'
-import {Add,ChevronRight,Close,DarkMode,DeleteOutline,EditOutlined,HelpOutline,LightMode,Logout,Menu as MenuIcon,MenuOpen,Search,Settings} from '@mui/icons-material'
+import {Add,ChevronRight,Close,DarkMode,DeleteOutline,EditOutlined,HelpOutline,LightMode,Logout,Menu as MenuIcon,MenuOpen,MoreVert,Search,Settings} from '@mui/icons-material'
 import {useLocation,useNavigate} from 'react-router-dom'
 import {api,asArray} from '../api'
 import {ColorModeContext} from '../theme'
 
 const wide=268,compact=72
+const clampWidth=value=>Math.min(420,Math.max(220,Math.round(value)))
+const savedWidth=()=>{try{return clampWidth(Number(localStorage.getItem('sophia_sidebar_width'))||wide)}catch{return wide}}
 const titleOf=chat=>(chat?.title||'').trim()||'Nova conversa'
 const shortDate=value=>{const raw=String(value||'');if(!raw)return '';const date=new Date(raw.includes('T')?raw:raw.replace(' ','T')+'Z');if(Number.isNaN(date.getTime()))return '';const now=new Date(),yesterday=new Date(now.getTime()-86400000),same=(a,b)=>a.toDateString()===b.toDateString();if(same(date,now))return 'Hoje';if(same(date,yesterday))return 'Ontem';return date.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'})}
 const roleLabels={padrao:'Padrão',diretor:'Diretor',gerente:'Gerente de TI',admin:'Administrador'}
 export default function Layout({children,user,onLogout}){
  const nav=useNavigate(),loc=useLocation(),theme=useTheme(),mobile=useMediaQuery(theme.breakpoints.down('md')),{mode,toggle}=useContext(ColorModeContext)
- const [chats,setChats]=useState([]),[collapsed,setCollapsed]=useState(()=>localStorage.getItem('sophia_sidebar')==='collapsed')
+ const [chats,setChats]=useState([]),[collapsed,setCollapsed]=useState(()=>localStorage.getItem('sophia_sidebar')==='collapsed'),[sidebarWidth,setSidebarWidth]=useState(savedWidth),[resizing,setResizing]=useState(false),[chatMenu,setChatMenu]=useState({anchor:null,chat:null})
  const [mobileOpen,setMobileOpen]=useState(false)
  const [searchOpen,setSearchOpen]=useState(false),[helpOpen,setHelpOpen]=useState(false),[query,setQuery]=useState(''),[searchData,setSearchData]=useState([]),[searchLoading,setSearchLoading]=useState(false),[accountAnchor,setAccountAnchor]=useState(null),[editChat,setEditChat]=useState(null),[editTitle,setEditTitle]=useState(''),[editing,setEditing]=useState(false)
- const compactMode=!mobile&&collapsed,width=mobile?0:(compactMode?compact:wide),drawerWidth=mobile?wide:width
+ const compactMode=!mobile&&collapsed,width=mobile?0:(compactMode?compact:sidebarWidth),drawerWidth=mobile?wide:width
  useEffect(()=>{const refresh=()=>api.get('/conversations').then(r=>setChats(asArray(r.data))).catch(()=>setChats([]));refresh();window.addEventListener('sophia-conversations-changed',refresh);return()=>window.removeEventListener('sophia-conversations-changed',refresh)},[loc.pathname])
  useEffect(()=>{if(mobile)setMobileOpen(false)},[loc.pathname,mobile])
  useEffect(()=>{if(!searchOpen)return;let active=true;setSearchLoading(true);Promise.all(chats.map(c=>c.messages?Promise.resolve(c):api.get(`/conversations/${c.id}`).then(r=>r.data).catch(()=>null))).then(data=>{if(active)setSearchData(data.filter(Boolean))}).finally(()=>{if(active)setSearchLoading(false)});return()=>{active=false}},[searchOpen])
  const term=query.trim().toLowerCase()
  const results=term?searchData.filter(c=>c.title.toLowerCase().includes(term)||c.messages?.some(m=>m.content.toLowerCase().includes(term))):[]
+ useEffect(()=>{try{localStorage.setItem('sophia_sidebar_width',String(sidebarWidth))}catch{}},[sidebarWidth])
+ const startResize=event=>{event.preventDefault();const startX=event.clientX,startWidth=sidebarWidth;setResizing(true);const move=moveEvent=>setSidebarWidth(clampWidth(startWidth+moveEvent.clientX-startX));const up=()=>{window.removeEventListener('mousemove',move);window.removeEventListener('mouseup',up);setResizing(false)};window.addEventListener('mousemove',move);window.addEventListener('mouseup',up)}
+ const openChatMenu=(event,chat)=>{event.stopPropagation();setChatMenu({anchor:event.currentTarget,chat})}
+ const closeChatMenu=()=>setChatMenu({anchor:null,chat:null})
  const toggleSidebar=()=>mobile?setMobileOpen(false):setCollapsed(value=>{localStorage.setItem('sophia_sidebar',!value?'collapsed':'open');return!value})
  const go=path=>{nav(path);if(mobile)setMobileOpen(false)}
  const newChat=()=>{window.dispatchEvent(new Event('sophia-new-chat'));go('/')}
@@ -37,7 +43,8 @@ export default function Layout({children,user,onLogout}){
    <Typography component="h1" title={headerTitle} noWrap sx={{flex:1,minWidth:0,fontSize:{xs:16,md:18},fontWeight:750,lineHeight:1.3}}>{headerTitle}</Typography>
    <Box component="img" src="/soph-logo-compact.jpg" alt="Porto de Porto Velho" sx={{height:{xs:34,md:44},width:'auto',flex:'0 0 auto',p:.5,bgcolor:'#fff',borderRadius:1.5,boxShadow:'0 1px 3px rgba(0,0,0,.28)'}}/>
   </Box>
-  <Drawer variant={mobile?'temporary':'permanent'} open={mobile?mobileOpen:true} onClose={()=>setMobileOpen(false)} ModalProps={{keepMounted:true}} sx={{width:drawerWidth,flexShrink:0,transition:'width .2s','& .MuiDrawer-paper':{width:drawerWidth,maxWidth:'86vw',boxSizing:'border-box',transition:'width .2s',overflowX:'hidden',background:mode==='dark'?'#17120f':'#fff8f3',borderRight:`1px solid ${theme.palette.divider}`}}}>
+  <Drawer variant={mobile?'temporary':'permanent'} open={mobile?mobileOpen:true} onClose={()=>setMobileOpen(false)} ModalProps={{keepMounted:true}} sx={{width:drawerWidth,flexShrink:0,transition:resizing?'none':'width .2s','& .MuiDrawer-paper':{width:drawerWidth,maxWidth:'86vw',boxSizing:'border-box',transition:resizing?'none':'width .2s',overflowX:'hidden',background:mode==='dark'?'#17120f':'#fff8f3',borderRight:`1px solid ${theme.palette.divider}`}}}>
+   {!mobile&&!compactMode&&<Box role="separator" aria-orientation="vertical" aria-label="Redimensionar barra lateral" onMouseDown={startResize} onDoubleClick={()=>setSidebarWidth(wide)} sx={{position:'absolute',top:0,right:0,bottom:0,width:6,cursor:'col-resize',zIndex:2,'&:hover,&:active':{bgcolor:'primary.main',opacity:.4}}}/>}
    <Box sx={{height:'100%',display:'flex',flexDirection:'column',p:1.2}}>
     <Box display="flex" alignItems="center" justifyContent={compactMode?'center':'space-between'} px={compactMode?0:1} py={.5}>
      {!compactMode&&<Typography component="button" onClick={()=>go('/')} fontWeight={900} fontSize={20} color="primary" sx={{border:0,background:'none',p:0,minHeight:44,display:'inline-flex',alignItems:'center',cursor:'pointer','&:hover':{opacity:.78}}}>SOPH.IA</Typography>}
@@ -46,12 +53,16 @@ export default function Layout({children,user,onLogout}){
     <List dense sx={{mt:1}}>{item(<Add/>,'Novo chat',newChat,loc.pathname==='/')}{compactMode&&item(<Search/>,'Pesquisar conversas',()=>setSearchOpen(true))}</List>
     <Box sx={{flex:1,overflowY:'auto',mt:1}}>
      {!compactMode&&!!chats.length&&<Typography variant="caption" color="text.secondary" px={1.5}>Conversas</Typography>}
-     <List dense>{chats.map(chat=><ListItemButton className="conversation-item" key={chat.id} onClick={()=>go(`/chat/${chat.id}`)} selected={loc.pathname===`/chat/${chat.id}`} sx={{borderRadius:2,minHeight:44,px:1.4,gap:1,'& .edit-title':{opacity:0,transform:'translateX(4px)'},'&:hover .edit-title,&:focus-visible .edit-title':{opacity:1,transform:'translateX(0)'},'@media (hover: none)':{'& .edit-title':{opacity:1,transform:'none'}}}}><Box sx={{width:6,height:6,borderRadius:'50%',bgcolor:'secondary.main',flex:'0 0 auto'}}/><ListItemText primary={titleOf(chat)} title={titleOf(chat)} secondary={shortDate(chat.updated_at)} primaryTypographyProps={{fontSize:14,lineHeight:1.35,noWrap:true}} secondaryTypographyProps={{fontSize:12,noWrap:true}} sx={{minWidth:0}}/><Tooltip title="Editar nome da conversa"><IconButton className="edit-title" size="medium" onClick={event=>openEdit(event,chat)} aria-label="Editar nome da conversa" sx={{transition:'opacity .18s,transform .18s',flex:'0 0 auto',width:44,height:44}}><EditOutlined sx={{fontSize:17}}/></IconButton></Tooltip><Tooltip title="Excluir conversa"><IconButton className="edit-title" size="medium" onClick={event=>openDelete(event,chat)} aria-label="Excluir conversa" sx={{transition:'opacity .18s,transform .18s',flex:'0 0 auto',width:44,height:44}}><DeleteOutline sx={{fontSize:17}}/></IconButton></Tooltip></ListItemButton>)}</List>
+     <List dense>{chats.map(chat=><ListItemButton className="conversation-item" key={chat.id} onClick={()=>go(`/chat/${chat.id}`)} selected={loc.pathname===`/chat/${chat.id}`} sx={{borderRadius:2,minHeight:44,px:1.4,gap:1,'& .edit-title':{opacity:0,transform:'translateX(4px)'},'&:hover .edit-title,&:focus-visible .edit-title':{opacity:1,transform:'translateX(0)'},'@media (hover: none)':{'& .edit-title':{opacity:1,transform:'none'}}}}><Box sx={{width:6,height:6,borderRadius:'50%',bgcolor:'secondary.main',flex:'0 0 auto'}}/><ListItemText primary={titleOf(chat)} title={titleOf(chat)} secondary={shortDate(chat.updated_at)} primaryTypographyProps={{fontSize:14,lineHeight:1.35,noWrap:true}} secondaryTypographyProps={{fontSize:12,noWrap:true}} sx={{minWidth:0}}/><Tooltip title="Opções da conversa"><IconButton className="edit-title" size="small" onClick={event=>openChatMenu(event,chat)} aria-label={`Opções da conversa ${titleOf(chat)}`} aria-haspopup="menu" sx={{transition:'opacity .18s,transform .18s',flex:'0 0 auto',width:30,height:30,'@media (hover: none)':{width:44,height:44}}}><MoreVert sx={{fontSize:18}}/></IconButton></Tooltip></ListItemButton>)}</List>
     </Box>
     <Divider sx={{my:1}}/>
     <Tooltip title={compactMode?'Abrir opções da conta':''} placement="right"><Box component="button" onClick={e=>setAccountAnchor(e.currentTarget)} sx={{width:'100%',display:'flex',alignItems:'center',justifyContent:compactMode?'center':'flex-start',gap:1.2,p:1,border:0,borderRadius:2,bgcolor:accountAnchor?'action.selected':'transparent',color:'text.primary',cursor:'pointer',textAlign:'left','&:hover':{bgcolor:'action.hover'}}}><Avatar sx={{width:34,height:34,bgcolor:'primary.main',flex:'0 0 auto'}}>{user.name?.[0]?.toUpperCase()||'U'}</Avatar>{!compactMode&&<><Box minWidth={0} flex={1}><Typography variant="body2" noWrap fontWeight={750}>{user.name}</Typography><Typography variant="caption" color="text.secondary">{roleLabels[user.role]||user.role}</Typography></Box><ChevronRight fontSize="small" sx={{color:'text.secondary'}}/></>}</Box></Tooltip>
    </Box>
   </Drawer>
+  <Menu anchorEl={chatMenu.anchor} open={Boolean(chatMenu.anchor)} onClose={closeChatMenu} anchorOrigin={{vertical:'bottom',horizontal:'right'}} transformOrigin={{vertical:'top',horizontal:'right'}} slotProps={{paper:{sx:{borderRadius:2,minWidth:180}}}}>
+   <MenuItem onClick={event=>{openEdit(event,chatMenu.chat);closeChatMenu()}} sx={{borderRadius:2,minHeight:44}}><ListItemIcon><EditOutlined fontSize="small"/></ListItemIcon><ListItemText>Renomear</ListItemText></MenuItem>
+   <MenuItem onClick={event=>{openDelete(event,chatMenu.chat);closeChatMenu()}} sx={{borderRadius:2,minHeight:44,color:'error.main'}}><ListItemIcon><DeleteOutline fontSize="small" color="error"/></ListItemIcon><ListItemText>Excluir</ListItemText></MenuItem>
+  </Menu>
   <Menu anchorEl={accountAnchor} open={Boolean(accountAnchor)} onClose={()=>setAccountAnchor(null)} anchorOrigin={{vertical:'top',horizontal:'left'}} transformOrigin={{vertical:'bottom',horizontal:'left'}} slotProps={{paper:{sx:{width:248,mb:1.2,p:.7,borderRadius:3,border:'1px solid',borderColor:'divider',boxShadow:'0 12px 32px rgba(0,0,0,.28)'}}}}>
    <Box display="flex" alignItems="center" gap={1.2} px={1.2} py={1}><Avatar sx={{width:34,height:34,bgcolor:'primary.main'}}>{user.name?.[0]?.toUpperCase()||'U'}</Avatar><Box minWidth={0} flex={1}><Typography variant="body2" fontWeight={750} noWrap>{user.name}</Typography><Typography variant="caption" color="text.secondary">{roleLabels[user.role]||user.role}</Typography></Box></Box>
    <Divider sx={{my:.6}}/>
