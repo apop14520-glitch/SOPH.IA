@@ -28,7 +28,13 @@ para manter.
   são visíveis somente para o usuário que os enviou.
 - Chat com indicação das fontes consultadas. A pesquisa na web se limita aos
   domínios autorizados pelo administrador.
-- Formulários para ETP, TR, Despacho e Memorando. As respostas passam por
+- Conversas: exclusão individual pelo menu de três pontos ou em lote, com
+  **Selecionar**. Só o dono da conversa pode excluí-la. Anexos usados apenas nela
+  são removidos; os que também aparecem em outra conversa são mantidos.
+- Barra lateral redimensionável, entre 220 e 420 px. A largura fica guardada no navegador.
+- Resposta exportável para Word (.docx) pelo botão de download.
+- Modelos de pedido para ETP, TR, Despacho e Memorando. Cada cartão preenche a
+  caixa de texto para você substituir os trechos entre colchetes. As respostas passam por
   pós-processamento que remove seções internas e colchetes e padroniza títulos.
 
 ## Publicação no Cloudflare Pages
@@ -152,14 +158,15 @@ senhas em arquivos do projeto.
 frontend/
   src/          interface React (telas em pages/, componentes em components/)
   functions/    API em Pages Functions (api/[[path]].js)
-  tests/        testes de permissões e de pós-processamento
+  lib/          comportamento da IA (modos, especialidades e regras) e busca de trechos
+  tests/        testes de permissões, pós-processamento, e-mail, conversas e DOCX
 evals/          conjunto de avaliação das respostas da IA
 ```
 
 ## Fluxo recomendado
 
 1. O administrador cadastra setores, usuários, normas e modelos.
-2. O usuário escolhe o tipo de documento e preenche o formulário orientado.
+2. O usuário escolhe um modelo de pedido e substitui os trechos entre colchetes.
 3. A aplicação recupera fontes da biblioteca e gera a primeira versão.
 4. O revisor altera o texto; cada salvamento cria uma versão imutável.
 
@@ -186,7 +193,7 @@ As especialidades são ETP e Termo de Referência, despachos e memorandos, porta
 **Limites atuais:**
 - "Comparar" compara apenas os textos enviados. O sistema não guarda histórico de versões.
 - Portarias e ofícios seguem a estrutura usual quando o modelo não está na base institucional, e a resposta informa isso.
-- Os campos de ETP e TR vêm dos modelos da base institucional. Não há formulários.
+- Não há formulário com campos. Os modelos de pedido são atalhos que preenchem a caixa de texto. A estrutura de ETP e TR vem dos modelos da base institucional, quando existem.
 - Ainda não há seletor de modo ou de especialidade na tela.
 - O prompt de sistema tem cerca de 5 mil caracteres. Isso é medido pela avaliação em `evals/`.
 
@@ -196,7 +203,8 @@ As especialidades são ETP e Termo de Referência, despachos e memorandos, porta
   com validade de 8 horas; não há renovação automática.
 - A recuperação de senha por e-mail só funciona com `SMTP_USER`, `SMTP_PASS` e
   `MAIL_FROM` configurados. Sem isso, o administrador redefine a senha.
-- Não há exportação para DOCX na versão do Cloudflare.
+- O .docx exportado é simples: mantém títulos e listas, mas não preserva negrito
+  nem tabelas, e não traz timbre nem cabeçalho institucional.
 - Não há assinatura digital, tramitação nem integração com o SEI.
 - As fontes de exemplo não substituem normativos oficiais atualizados.
 - Toda minuta deve ser revisada por servidor competente.
