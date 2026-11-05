@@ -37,6 +37,12 @@ test('prompt de sistema traz regras, modo e especialidade, sem as instruções q
   assert.doesNotMatch(text, /nunca escreva colchetes/)
 })
 
+test('regras de lacuna: despacho sem cabeçalho inventado; ETP sem valor inventado; sem afirmar aprovação', () => {
+  assert.match(buildSystemPrompt({mode: 'elaborar', specialty: 'despacho_memorando'}), /Não monte cabeçalho/)
+  assert.match(buildSystemPrompt({mode: 'elaborar', specialty: 'etp_tr'}), /\[PENDENTE: informar estimativa de valor/)
+  assert.match(buildSystemPrompt({mode: 'elaborar', specialty: 'etp_tr'}), /condição futura/)
+})
+
 test('pedido sem modo claro recebe a pergunta e não chama a IA', async () => {
   let calls = 0
   const {env, db} = await setup({AI: {run: async () => { calls++; return {response: 'texto'} }}})

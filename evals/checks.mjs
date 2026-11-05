@@ -68,7 +68,11 @@ export function checkResponse(testCase, text) {
   // Valores, números de processo e datas que não estão no pedido podem ter sido inventados: aviso para conferência.
   const sensitive = body.match(/R\$\s?[\d.,]+|\d{5}\.\d{6}\/\d{4}-\d{2}|\d{2}\/\d{2}\/\d{4}/g) || []
   for (const token of new Set(sensitive)) {
-    if (!prompt.includes(normalize(token))) warnings.push(`valor, processo ou data não citado no pedido, conferir: "${token}"`)
+    const clean = token.replace(/[.,]+$/, '')
+    if (prompt.includes(normalize(clean))) continue
+    // Em ETP, valor em reais sem dado no pedido é falha: a estimativa precisa vir de dado informado.
+    if (testCase.kind === 'etp' && clean.startsWith('R$')) failures.push(`ETP com valor em reais não informado no pedido: "${clean}"`)
+    else warnings.push(`valor, processo ou data não citado no pedido, conferir: "${clean}"`)
   }
 
   for (const match of plain.matchAll(REFERENCE)) {
